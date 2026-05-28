@@ -1,0 +1,23 @@
+{
+  "name": "sourcery",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Malayalam cooking videos → structured English recipes",
+  "packageManager": "pnpm@9.15.0",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "mobile": "pnpm --filter mobile start",
+    "mobile:web": "pnpm --filter mobile run web",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "pnpm": {
+    "overrides": {
+      "react": "19.2.3",
+      "react-dom": "19.2.3",
+      "react-native": "0.85.3"
+    }
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  }
+}
