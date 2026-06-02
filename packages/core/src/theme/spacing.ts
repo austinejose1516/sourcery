@@ -1,3 +1,4 @@
+/** 4pt spacing scale. */
 export const spacing = {
   xs: 4,
   sm: 8,
@@ -11,10 +12,16 @@ export const spacing = {
 export const radius = {
   sm: 8,
   md: 12,
+  input: 14,
   card: 20,
   pill: 999,
 } as const;
 
 export const sizing = {
-  buttonHeight: 48,
+  buttonHeight: 52,
+  inputHeight: 54,
+  iconButton: 44,
+  maxContentWidth: 480,
 } as const;
+
+export type SpacingToken = keyof typeof spacing;
