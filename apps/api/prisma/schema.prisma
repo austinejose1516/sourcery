@@ -1,0 +1,472 @@
+// ============================================================================
+// Recipe App — Prisma Schema (MVP)
+// ============================================================================
+// Stack: Supabase Postgres + Prisma + Supabase Auth + Cloudflare R2
+//
+// Auth lives in Supabase's auth.users (managed by Supabase, not by us).
+// Everything below lives in the public schema.
+// The User model here is a PROFILE table — the id matches auth.users.id.
+//
+// UI mapping:
+//   Tab 1 (Home)       → Follow, Recipe, TriedThis
+//   Tab 2 (Explore)    → Recipe, Cuisine, Region, DietaryTag + search indexes
+//   Tab 3 (My Recipes) → RecipeSave, Recipe(status=draft), ShoppingList, IngestionJob
+//   Tab 4 (Profile)    → User, UserCuisineInterest
+//   Recipe Detail      → Recipe, RecipeStep, RecipeIngredient, RecipeEndorsement, TriedThis
+//   Active Cooking     → CookingSession
+//   Contributor Flow   → IngestionJob → Recipe + Steps + Ingredients
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("SUPABASE_DIRECT_URL")
+}
+
+// ============================================================================
+// CORE: User profile
+// ============================================================================
+// Extends Supabase auth.users. The id here is the same UUID from auth.
+// Created via a Supabase trigger or on first app open after signup.
+
+model User {
+  id                String             @id @db.Uuid // matches auth.users.id
+  username          String             @unique
+  displayName       String
+  bio               String?
+  avatarUrl         String?            // Cloudflare R2 path
+  regionId          String?            @db.Uuid
+  country           String?            // ISO country code, e.g. "IE", "IN"
+  languages         String[]           // ISO language codes, e.g. ["en", "ml"]
+  cookingExperience CookingExperience  @default(BEGINNER)
+  unitPreference    UnitPreference     @default(METRIC)
+  spiceTolerance    SpiceTolerance     @default(MEDIUM)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  // Relations
+  region            Region?            @relation(fields: [regionId], references: [id])
+  recipes           Recipe[]
+  cuisineInterests  UserCuisineInterest[]
+  followers         Follow[]           @relation("Following") // people who follow this user
+  following         Follow[]           @relation("Follower")  // people this user follows
+  savedRecipes      RecipeSave[]
+  triedPosts        TriedThis[]
+  endorsements      RecipeEndorsement[]
+  shoppingList      ShoppingList?
+  cookingSessions   CookingSession[]
+  ingestionJobs     IngestionJob[]
+
+  @@map("users")
+}
+
+enum CookingExperience {
+  BEGINNER
+  CONFIDENT
+  EXPERIENCED
+}
+
+enum UnitPreference {
+  METRIC
+  IMPERIAL
+}
+
+enum SpiceTolerance {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+// ============================================================================
+// CORE: Recipe + Steps + Ingredients
+// ============================================================================
+// The central entity. Everything revolves around this.
+// Bilingual: original language + English translation.
+// parentRecipeId enables the lineage/fork graph (Git for recipes).
+
+model Recipe {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  authorId            String              @db.Uuid
+  title               String              // English
+  titleOriginal       String?             // original language
+  description         String?             // English
+  descriptionOriginal String?             // original language
+  originalLanguage    String?             // ISO 639-1 code: "ml", "vi", "zh", "ar"
+  status              RecipeStatus        @default(DRAFT)
+  difficulty          Difficulty?
+  prepTimeMinutes     Int?
+  cookTimeMinutes     Int?
+  // totalTimeMinutes is manually entered — useful when the contributor specifies
+  // total time without a prep/cook split. Not enforced as prep+cook.
+  totalTimeMinutes    Int?
+  baseServings        Int                 @default(4)
+  cuisineId           String?             @db.Uuid
+  regionId            String?             @db.Uuid
+  parentRecipeId      String?             @db.Uuid // lineage: forked from this recipe
+  forkNote            String?             // what the forker changed
+  coverImageUrl       String?             // R2
+  originalVideoUrl    String?             // R2 — the raw contributor recording
+  originalAudioUrl    String?             // R2 — if audio-only recording
+  viewCount           Int                 @default(0)
+  saveCount           Int                 @default(0)
+  cookCount           Int                 @default(0)
+  endorsementCount    Int                 @default(0)
+  publishedAt         DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  // Relations
+  author              User                @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  cuisine             Cuisine?            @relation(fields: [cuisineId], references: [id])
+  region              Region?             @relation(fields: [regionId], references: [id])
+  parentRecipe        Recipe?             @relation("RecipeLineage", fields: [parentRecipeId], references: [id])
+  forks               Recipe[]            @relation("RecipeLineage") // recipes forked from this one
+  steps               RecipeStep[]
+  ingredients         RecipeIngredient[]
+  dietaryTags         RecipeDietaryTag[]
+  saves               RecipeSave[]
+  triedPosts          TriedThis[]
+  endorsements        RecipeEndorsement[]
+  cookingSessions     CookingSession[]
+  shoppingListItems   ShoppingListItem[]
+  ingestionJob        IngestionJob?
+
+  // Indexes for the queries the UI actually runs
+  @@index([authorId, publishedAt(sort: Desc)])   // Home feed: recipes from followed users
+  @@index([cuisineId])                            // Explore: filter by cuisine
+  @@index([regionId])                             // Explore: filter by region
+  @@index([difficulty])                           // Explore: filter by difficulty
+  @@index([totalTimeMinutes])                     // Explore: "under 30 min" filter
+  @@index([status, publishedAt(sort: Desc)])      // General: published recipes sorted by date
+  @@map("recipes")
+}
+
+enum RecipeStatus {
+  DRAFT
+  PROCESSING  // AI pipeline is working on it
+  PUBLISHED
+  ARCHIVED
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model RecipeStep {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recipeId            String   @db.Uuid
+  stepNumber          Int      // ordered, 1-based
+  instruction         String   // English
+  instructionOriginal String?  // original language
+  videoSegmentUrl     String?  // R2 — AI-extracted clip for this step
+  // stored as integer milliseconds to avoid float precision issues
+  videoStartMs        Int?
+  videoEndMs          Int?
+  timerSeconds        Int?     // only if the step involves waiting
+  tipText             String?  // optional contributor tip
+  createdAt           DateTime @default(now())
+
+  // Relations
+  recipe              Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, stepNumber])
+  @@index([recipeId, stepNumber])
+  @@map("recipe_steps")
+}
+
+model RecipeIngredient {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recipeId         String   @db.Uuid
+  name             String   // English
+  nameOriginal     String?  // original language
+  amount           Float?   // nullable for free-text quantities ("a handful", "to taste")
+  unit             String?  // "g", "ml", "cup", "tsp", etc. Null for whole items ("3 eggs")
+  quantityNote     String?  // free-text descriptor when amount is unstructured ("a handful")
+  groupLabel       String?  // "For the sauce", "For the marinade"
+  orderIndex       Int      // display order within the group
+  substitutionNote String?  // "use coconut cream if unavailable"
+  createdAt        DateTime @default(now())
+
+  // Relations
+  recipe           Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@index([recipeId, orderIndex])
+  @@map("recipe_ingredients")
+}
+
+// ============================================================================
+// TAXONOMY: Cuisine, Region, Dietary Tags
+// ============================================================================
+// Seeded data. These are lookup tables, not user-generated.
+
+model Cuisine {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @unique // "Indian", "Vietnamese", "Lebanese"
+  slug      String   @unique // "indian", "vietnamese", "lebanese"
+  createdAt DateTime @default(now())
+
+  // Relations
+  recipes       Recipe[]
+  userInterests UserCuisineInterest[]
+
+  @@map("cuisines")
+}
+
+model Region {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String   // "Kerala", "Hanoi", "Chengdu"
+  country        String   // ISO country code
+  latitude       Float?
+  longitude      Float?
+  parentRegionId String?  @db.Uuid // hierarchy: "Kerala" parent = "India"
+  createdAt      DateTime @default(now())
+
+  // Relations
+  parentRegion   Region?  @relation("RegionHierarchy", fields: [parentRegionId], references: [id])
+  childRegions   Region[] @relation("RegionHierarchy")
+  recipes        Recipe[]
+  users          User[]
+
+  @@unique([name, country]) // prevents duplicate region rows per country
+  @@map("regions")
+}
+
+model DietaryTag {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @unique // "Vegetarian", "Gluten-Free", "Halal"
+  slug      String   @unique // "vegetarian", "gluten-free", "halal"
+  createdAt DateTime @default(now())
+
+  // Relations
+  recipes   RecipeDietaryTag[]
+
+  @@map("dietary_tags")
+}
+
+model RecipeDietaryTag {
+  recipeId     String @db.Uuid
+  dietaryTagId String @db.Uuid
+
+  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  dietaryTag   DietaryTag @relation(fields: [dietaryTagId], references: [id], onDelete: Cascade)
+
+  @@id([recipeId, dietaryTagId])
+  @@map("recipe_dietary_tags")
+}
+
+model UserCuisineInterest {
+  userId    String @db.Uuid
+  cuisineId String @db.Uuid
+
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cuisine   Cuisine @relation(fields: [cuisineId], references: [id], onDelete: Cascade)
+
+  @@id([userId, cuisineId])
+  @@map("user_cuisine_interests")
+}
+
+// ============================================================================
+// SOCIAL: Follow, Save, TriedThis, Endorsement
+// ============================================================================
+
+model Follow {
+  followerId  String   @db.Uuid // the person doing the following
+  followingId String   @db.Uuid // the person being followed
+  createdAt   DateTime @default(now())
+
+  follower    User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followerId])  // "who do I follow?" — Home feed query
+  @@index([followingId]) // "who follows me?" — Profile follower count
+  @@map("follows")
+}
+
+model RecipeSave {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @db.Uuid
+  recipeId  String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipeId])
+  @@index([userId]) // Tab 3: "my saved recipes"
+  @@map("recipe_saves")
+}
+
+// "Tried this" posts — the social proof layer.
+// Appears in Home feed. Links back to the original recipe.
+// variations field feeds the lineage intelligence over time.
+model TriedThis {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @db.Uuid
+  recipeId   String   @db.Uuid
+  photoUrl   String?  // R2
+  note       String?  // short text about how it went
+  variations String?  // what they changed — feeds substitution intelligence
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe     Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])  // user's tried-this history
+  @@index([recipeId])                       // recipe detail: community section
+  @@map("tried_this")
+}
+
+// Authenticity endorsement. Region-weighting is computed at query time
+// by joining with the endorsing user's region and comparing to recipe's region.
+// "Endorsed by 18 cooks from Kerala" = COUNT WHERE user.regionId matches recipe.regionId
+model RecipeEndorsement {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @db.Uuid
+  recipeId  String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipeId])
+  @@index([recipeId]) // recipe detail: endorsement count
+  @@map("recipe_endorsements")
+}
+
+// ============================================================================
+// PERSONAL: Shopping List
+// ============================================================================
+// One active list per user for MVP. Items can be traced back to which recipe
+// they came from, so the list can be grouped by recipe in the UI.
+
+model ShoppingList {
+  id        String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String             @unique @db.Uuid // one list per user
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     ShoppingListItem[]
+
+  @@map("shopping_lists")
+}
+
+model ShoppingListItem {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shoppingListId String       @db.Uuid
+  ingredientName String
+  amount         Float?
+  unit           String?
+  quantityNote   String?      // free-text for unstructured quantities ("a handful")
+  recipeId       String?      @db.Uuid // which recipe this came from (nullable for manual adds)
+  checked        Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  shoppingList   ShoppingList @relation(fields: [shoppingListId], references: [id], onDelete: Cascade)
+  recipe         Recipe?      @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+
+  @@index([shoppingListId])
+  @@map("shopping_list_items")
+}
+
+// ============================================================================
+// COOKING: Active cooking session tracking
+// ============================================================================
+// Powers:
+// - Active cooking mode (track which step the user is on)
+// - Verified cook counter (completed sessions = real cooks)
+// - Cooking stats in Profile ("you cooked 12 recipes this month")
+
+model CookingSession {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @db.Uuid
+  recipeId    String    @db.Uuid
+  currentStep Int       @default(1)
+  startedAt   DateTime  @default(now())
+  completedAt DateTime? // null = still cooking. Non-null = verified cook.
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe      Recipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@index([userId, completedAt]) // Profile: cooking stats
+  @@index([recipeId])            // Recipe detail: cook count verification
+  @@map("cooking_sessions")
+}
+
+// ============================================================================
+// AI PIPELINE: Ingestion job tracking
+// ============================================================================
+// Tracks the async contributor pipeline:
+//   Upload → Transcribe → Structure → Translate → Review → Complete
+//
+// The frontend polls or subscribes to status changes to show progress:
+//   "We're listening to your recipe…" → "Structuring…" → "Ready for review"
+//
+// Once complete, recipeId is set and the structured data has been written
+// to Recipe + RecipeStep + RecipeIngredient.
+
+model IngestionJob {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String          @db.Uuid
+  recipeId         String?         @unique @db.Uuid // set after processing completes
+  sourceType       IngestionSource
+  sourceUrl        String?         // R2 path or external URL; null for MANUAL source type
+  sourceLanguage   String?         // detected or declared ISO code
+  status           IngestionStatus @default(UPLOADING)
+  transcriptionRaw String?         // raw speech-to-text output
+  structuredData   Json?           // intermediate structured form before commit
+  errorMessage     String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe           Recipe?         @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])                    // "my uploads and their status"
+  @@index([userId, createdAt(sort: Desc)])     // "my recent uploads"
+  @@map("ingestion_jobs")
+}
+
+enum IngestionSource {
+  VIDEO
+  AUDIO
+  LINK        // imported from YouTube/TikTok URL
+  HANDWRITTEN // scanned recipe card
+  MANUAL      // typed by hand (no AI processing needed)
+}
+
+enum IngestionStatus {
+  UPLOADING
+  TRANSCRIBING
+  STRUCTURING
+  TRANSLATING
+  REVIEW      // user is reviewing the AI's output
+  COMPLETE
+  FAILED
+}
+
+// ============================================================================
+// FUTURE (not built yet, but schema won't block them)
+// ============================================================================
+//
+// Collection / CollectionRecipe  — curated lists, editorial or user-created
+// MealPlan / MealPlanEntry       — weekly planning grid
+// Notification                   — in-app notifications
+// Comment                        — threaded discussion on recipes
+// RecipeTranslation              — when you go beyond original + English
+//                                  (replace title/titleOriginal with a
+//                                  translation table keyed by recipeId + lang)
+//
+// The migration path from the current bilingual columns to a full
+// RecipeTranslation table is straightforward:
+//   1. Create RecipeTranslation table
+//   2. Migrate existing title → RecipeTranslation(lang: "en")
+//   3. Migrate existing titleOriginal → RecipeTranslation(lang: originalLanguage)
+//   4. Drop the old columns
+// ============================================================================
