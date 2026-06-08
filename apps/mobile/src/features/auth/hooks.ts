@@ -1,6 +1,16 @@
 import { useMutation } from '@tanstack/react-query';
+import { apiPost } from '@/lib/api-client';
 import { authService, type SignInInput, type SignUpInput } from '@/services/auth';
+import { type AuthSession } from '@/services/auth/types';
 import { useAuthStore } from './store';
+
+async function syncUser(session: AuthSession) {
+  await apiPost('/users/sync', {
+    userId: session.userId,
+    displayName: session.displayName,
+    email: session.email,
+  });
+}
 
 /** Current session (or null). */
 export const useSession = () => useAuthStore((s) => s.session);
@@ -17,7 +27,10 @@ export const useSignIn = () => {
   const setSession = useAuthStore((s) => s.setSession);
   return useMutation({
     mutationFn: (input: SignInInput) => authService.signIn(input),
-    onSuccess: setSession,
+    onSuccess: async (session) => {
+      setSession(session);
+      await syncUser(session);
+    },
   });
 };
 
@@ -25,7 +38,10 @@ export const useSignUp = () => {
   const setSession = useAuthStore((s) => s.setSession);
   return useMutation({
     mutationFn: (input: SignUpInput) => authService.signUp(input),
-    onSuccess: setSession,
+    onSuccess: async (session) => {
+      setSession(session);
+      await syncUser(session);
+    },
   });
 };
 

@@ -1,5 +1,5 @@
 import { Alert, StyleSheet, View } from 'react-native';
-import { spacing } from '@sourcery/core';
+import { spacing } from '@recipeer/core';
 
 import { OrDivider, SocialButton, type SocialProvider } from '@/components/ui';
 

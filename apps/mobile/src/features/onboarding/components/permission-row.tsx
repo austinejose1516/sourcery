@@ -1,8 +1,8 @@
 import { StyleSheet, View } from 'react-native';
-import { colors, radius, spacing } from '@sourcery/core';
+import { colors, radius, spacing } from '@recipeer/core';
 
 import { Icon, type IconName, Text } from '@/components/ui';
-import { type ColorToken } from '@sourcery/core';
+import { type ColorToken } from '@recipeer/core';
 
 export interface PermissionRowProps {
   icon: IconName;

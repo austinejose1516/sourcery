@@ -1,5 +1,5 @@
 import { StyleSheet, View } from 'react-native';
-import { spacing } from '@sourcery/core';
+import { spacing } from '@recipeer/core';
 
 import { Text } from '@/components/ui';
 

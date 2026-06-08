@@ -7,7 +7,7 @@
     "types": ["node"],
     "noEmit": true,
     "paths": {
-      "@sourcery/core": ["../../packages/core/src/index.ts"]
+      "@recipeer/core": ["../../packages/core/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts", "scripts/**/*.ts"]

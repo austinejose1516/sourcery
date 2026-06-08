@@ -1,5 +1,5 @@
 import { Text as RNText, type TextProps as RNTextProps, type TextStyle } from 'react-native';
-import { colors, textVariants, type ColorToken, type TextVariant } from '@sourcery/core';
+import { colors, textVariants, type ColorToken, type TextVariant } from '@recipeer/core';
 
 export interface TextProps extends RNTextProps {
   variant?: TextVariant;

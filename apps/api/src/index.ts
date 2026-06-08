@@ -2,8 +2,10 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { env } from './env';
+import { feed } from './routes/feed';
 import { health } from './routes/health';
 import { process as processRoute } from './routes/process';
+import { social } from './routes/social';
 import { uploads } from './routes/uploads';
 import { users } from './routes/users';
 
@@ -16,6 +18,8 @@ app.route('/health', health);
 app.route('/uploads', uploads);
 app.route('/process', processRoute);
 app.route('/users', users);
+app.route('/feed', feed);
+app.route('/social', social);
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   console.log(`[api] listening on http://localhost:${info.port}`);

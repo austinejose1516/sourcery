@@ -1,11 +1,11 @@
 import { useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
-import { spacing } from '@sourcery/core';
+import { spacing } from '@recipeer/core';
 
 import { FadeInUp } from '@/components/motion/fade-in-up';
 import { Button, Screen, Text } from '@/components/ui';
 import { type IconName } from '@/components/ui';
-import { type ColorToken } from '@sourcery/core';
+import { type ColorToken } from '@recipeer/core';
 
 import { PermissionRow } from '../components/permission-row';
 
@@ -47,7 +47,7 @@ export function PermissionsScreen() {
       <FadeInUp>
         <Text variant="title">A few things we&apos;d like to ask.</Text>
         <Text variant="body" color="textSecondary" style={styles.subtitle}>
-          Sourcery only uses these while you&apos;re recording or cooking. You can turn them off any
+          ReciPeer only uses these while you&apos;re recording or cooking. You can turn them off any
           time.
         </Text>
       </FadeInUp>

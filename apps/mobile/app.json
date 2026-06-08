@@ -1,17 +1,17 @@
 {
   "expo": {
-    "name": "Sourcery",
-    "slug": "sourcery",
+    "name": "ReciPeer",
+    "slug": "recipeer",
     "version": "0.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "sourcery",
+    "scheme": "recipeer",
     "userInterfaceStyle": "light",
     "ios": {
-      "bundleIdentifier": "com.austinejose.sourcery"
+      "bundleIdentifier": "com.austinejose.recipeer"
     },
     "android": {
-      "package": "com.austinejose.sourcery",
+      "package": "com.austinejose.recipeer",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

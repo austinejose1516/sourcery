@@ -1,5 +1,5 @@
 import { ActivityIndicator, StyleSheet, View, type ViewStyle } from 'react-native';
-import { colors, radius, sizing, spacing, type ColorToken } from '@sourcery/core';
+import { colors, radius, sizing, spacing, type ColorToken } from '@recipeer/core';
 
 import { Icon, type IconName } from './icon';
 import { PressableScale } from './pressable-scale';

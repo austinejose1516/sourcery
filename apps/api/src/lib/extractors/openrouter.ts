@@ -2,7 +2,7 @@ import {
   type RecipeExtraction,
   type RecipeExtractor,
   recipeExtractionSchema,
-} from '@sourcery/core';
+} from '@recipeer/core';
 import { env } from '../../env';
 import { EXTRACTION_SYSTEM_PROMPT, EXTRACTION_USER_PROMPT } from '../prompt';
 import { fetchVideoBytes, stripJsonFences } from './shared';
@@ -23,7 +23,7 @@ export class OpenRouterRecipeExtractor implements RecipeExtractor {
       headers: {
         Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
-        'X-Title': 'Sourcery',
+        'X-Title': 'ReciPeer',
       },
       body: JSON.stringify({
         model: env.OPENROUTER_MODEL,

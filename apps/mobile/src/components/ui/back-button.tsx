@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { StyleSheet } from 'react-native';
-import { colors, sizing } from '@sourcery/core';
+import { colors, sizing } from '@recipeer/core';
 
 import { Icon } from './icon';
 import { PressableScale } from './pressable-scale';

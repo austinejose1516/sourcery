@@ -15,6 +15,17 @@ export const palette = {
   white: '#FFFFFF',
   hairline: '#E8DCC4',
 
+  // Editorial accents — used to tint cuisine / region chips so cards stay varied.
+  // Each pairs a soft surface tint with a saturated ink for text/icons on it.
+  apricot: '#F4D3A8',
+  apricotInk: '#9A5B16',
+  bleu: '#C7D6DE',
+  bleuInk: '#2F5A6E',
+  burgundy: '#D9B8B8',
+  burgundyInk: '#7A2E2E',
+  editorial: '#DCE0C4',
+  editorialInk: '#566034',
+
   // Translucent "ink" overlays (espresso @ alpha) — taken from the source design.
   ink04: 'rgba(61, 40, 23, 0.04)',
   ink06: 'rgba(61, 40, 23, 0.06)',
@@ -57,6 +68,16 @@ export const colors = {
   // Interaction states
   overlayPressed: palette.ink08,
   focusRing: palette.saffron,
+
+  // Editorial chip accents (surface tint + ink pairs)
+  apricot: palette.apricot,
+  apricotInk: palette.apricotInk,
+  bleu: palette.bleu,
+  bleuInk: palette.bleuInk,
+  burgundy: palette.burgundy,
+  burgundyInk: palette.burgundyInk,
+  editorial: palette.editorial,
+  editorialInk: palette.editorialInk,
 } as const;
 
 export type ColorToken = keyof typeof colors;

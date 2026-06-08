@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
-import { colors, sizing, spacing } from '@sourcery/core';
+import { colors, sizing, spacing } from '@recipeer/core';
 
 export interface ScreenProps {
   children: ReactNode;
@@ -28,6 +28,7 @@ export function Screen({
   const content = scroll ? (
     <ScrollView
       contentContainerStyle={[styles.content, contentStyle]}
+      contentInsetAdjustmentBehavior="automatic"
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
       {children}

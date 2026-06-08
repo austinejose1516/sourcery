@@ -1,5 +1,5 @@
 import { StyleSheet, View } from 'react-native';
-import { colors, radius, sizing, spacing } from '@sourcery/core';
+import { colors, radius, sizing, spacing } from '@recipeer/core';
 
 import { Icon, type IconName } from './icon';
 import { PressableScale } from './pressable-scale';

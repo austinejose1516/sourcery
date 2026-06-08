@@ -12,7 +12,7 @@ import {
   Inter_500Medium,
   Inter_600SemiBold,
 } from '@expo-google-fonts/inter';
-import { colors } from '@sourcery/core';
+import { colors } from '@recipeer/core';
 
 import { useAuthStatus } from '@/features/auth/hooks';
 import { AppProviders } from '@/providers/app-providers';

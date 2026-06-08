@@ -7,3 +7,4 @@ export { Hairline, OrDivider } from './divider';
 export { SocialButton, type SocialButtonProps, type SocialProvider } from './social-button';
 export { Screen, type ScreenProps } from './screen';
 export { BackButton } from './back-button';
+export { Logo, type LogoProps } from './logo';

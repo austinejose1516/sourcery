@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
-import { colors, radius, spacing } from '@sourcery/core';
+import { colors, radius, spacing } from '@recipeer/core';
 
 import { FadeInUp } from '@/components/motion/fade-in-up';
 import { BackButton, Button, Icon, Screen, Text, TextField } from '@/components/ui';

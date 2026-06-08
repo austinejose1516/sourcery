@@ -1,5 +1,5 @@
 import { StyleSheet, View } from 'react-native';
-import { colors, spacing } from '@sourcery/core';
+import { colors, spacing } from '@recipeer/core';
 
 import { Text } from './text';
 

@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { colors, type ColorToken } from '@sourcery/core';
+import { colors, type ColorToken } from '@recipeer/core';
 
 export type IconName = keyof typeof Ionicons.glyphMap;
 

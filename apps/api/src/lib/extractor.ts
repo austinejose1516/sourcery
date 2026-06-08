@@ -1,4 +1,4 @@
-import type { RecipeExtractor } from '@sourcery/core';
+import type { RecipeExtractor } from '@recipeer/core';
 import { env } from '../env';
 import { GoogleAIStudioRecipeExtractor } from './extractors/google';
 import { OpenRouterRecipeExtractor } from './extractors/openrouter';

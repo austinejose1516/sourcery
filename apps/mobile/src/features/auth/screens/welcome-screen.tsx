@@ -1,9 +1,9 @@
 import { useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
-import { colors, spacing } from '@sourcery/core';
+import { spacing } from '@recipeer/core';
 
 import { FadeInUp } from '@/components/motion/fade-in-up';
-import { Button, Screen, Text } from '@/components/ui';
+import { Button, Logo, Screen, Text } from '@/components/ui';
 
 export function WelcomeScreen() {
   const router = useRouter();
@@ -12,8 +12,7 @@ export function WelcomeScreen() {
     <Screen keyboardAvoiding={false} contentStyle={styles.content}>
       <View style={styles.hero}>
         <FadeInUp>
-          <Text variant="display">Sourcery</Text>
-          <View style={styles.rule} />
+          <Logo size="lg" style={{ alignSelf: 'center' }} />
         </FadeInUp>
 
         <FadeInUp delay={80}>
@@ -45,7 +44,6 @@ export function WelcomeScreen() {
 const styles = StyleSheet.create({
   content: { justifyContent: 'space-between', paddingVertical: spacing.xxxl },
   hero: { flex: 1, justifyContent: 'center', gap: spacing.lg },
-  rule: { marginTop: spacing.lg, width: 56, height: 2, borderRadius: 2, backgroundColor: colors.accent },
   headline: { maxWidth: 320 },
   actions: { gap: spacing.sm },
 });

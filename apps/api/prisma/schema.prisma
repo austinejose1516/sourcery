@@ -55,6 +55,8 @@ model User {
   following         Follow[]           @relation("Follower")  // people this user follows
   savedRecipes      RecipeSave[]
   triedPosts        TriedThis[]
+  postLikes         PostLike[]
+  postComments      PostComment[]
   endorsements      RecipeEndorsement[]
   shoppingList      ShoppingList?
   cookingSessions   CookingSession[]
@@ -306,20 +308,56 @@ model RecipeSave {
 // Appears in Home feed. Links back to the original recipe.
 // variations field feeds the lineage intelligence over time.
 model TriedThis {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId     String   @db.Uuid
-  recipeId   String   @db.Uuid
-  photoUrl   String?  // R2
-  note       String?  // short text about how it went
-  variations String?  // what they changed — feeds substitution intelligence
-  createdAt  DateTime @default(now())
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String        @db.Uuid
+  recipeId     String        @db.Uuid
+  photoUrl     String?       // R2
+  note         String?       // short text about how it went
+  variations   String?       // what they changed — feeds substitution intelligence
+  likeCount    Int           @default(0) // denormalized — kept in step by /social/like
+  commentCount Int           @default(0) // denormalized — kept in step by /social/comments
+  createdAt    DateTime      @default(now())
 
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  recipe     Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe       Recipe        @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  likes        PostLike[]
+  comments     PostComment[]
 
   @@index([userId, createdAt(sort: Desc)])  // user's tried-this history
   @@index([recipeId])                       // recipe detail: community section
   @@map("tried_this")
+}
+
+// A like on a "tried this" post. Idempotent per (user, post); the post's
+// likeCount counter is kept in step transactionally by /social/like.
+model PostLike {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid
+  postId    String    @db.Uuid
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      TriedThis @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([postId]) // post: like count / "who liked"
+  @@map("post_likes")
+}
+
+// A comment on a "tried this" post. The post's commentCount is kept in step
+// transactionally by /social/comments.
+model PostComment {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid
+  postId    String    @db.Uuid
+  body      String
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      TriedThis @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt]) // post: comment thread, oldest-first
+  @@map("post_comments")
 }
 
 // Authenticity endorsement. Region-weighting is computed at query time

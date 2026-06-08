@@ -7,4 +7,8 @@ config({ path: resolve(process.cwd(), '.env') });
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',
+  migrations: {
+    // Used by `prisma db seed` and `prisma migrate reset`.
+    seed: 'tsx prisma/seed.ts',
+  },
 });

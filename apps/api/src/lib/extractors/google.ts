@@ -2,7 +2,7 @@ import {
   type RecipeExtraction,
   type RecipeExtractor,
   recipeExtractionSchema,
-} from '@sourcery/core';
+} from '@recipeer/core';
 import { env } from '../../env';
 import { EXTRACTION_SYSTEM_PROMPT, EXTRACTION_USER_PROMPT } from '../prompt';
 import { fetchVideoBytes, isYouTubeUrl, sleep, stripJsonFences } from './shared';
@@ -47,7 +47,7 @@ export class GoogleAIStudioRecipeExtractor implements RecipeExtractor {
         'X-Goog-Upload-Header-Content-Type': mime,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ file: { display_name: 'sourcery-upload' } }),
+      body: JSON.stringify({ file: { display_name: 'recipeer-upload' } }),
     });
     if (!startRes.ok) {
       throw new Error(`Files API start ${startRes.status}: ${(await startRes.text()).slice(0, 400)}`);

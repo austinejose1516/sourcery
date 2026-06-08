@@ -6,7 +6,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { colors, radius, sizing, spacing, textVariants } from '@sourcery/core';
+import { colors, radius, sizing, spacing, textVariants } from '@recipeer/core';
 
 import { Icon } from './icon';
 import { Text } from './text';

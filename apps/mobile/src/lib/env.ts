@@ -12,12 +12,19 @@ const schema = z.object({
   EXPO_PUBLIC_SUPABASE_ANON_KEY: z
     .string()
     .min(1, 'Set EXPO_PUBLIC_SUPABASE_ANON_KEY in apps/mobile/.env'),
+  // Base URL of the Hono API (apps/api). Defaults to localhost for the iOS
+  // simulator; set the Mac's LAN IP in apps/mobile/.env for a physical device.
+  EXPO_PUBLIC_API_URL: z
+    .string()
+    .refine((v) => /^https?:\/\//.test(v), 'EXPO_PUBLIC_API_URL must be a full http(s):// URL')
+    .default('http://localhost:8787'),
 });
 
 function loadEnv() {
   const parsed = schema.safeParse({
     EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
     EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+    EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
   });
 
   if (!parsed.success) {

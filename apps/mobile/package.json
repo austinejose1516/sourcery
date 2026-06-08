@@ -8,7 +8,7 @@
     "@expo/ui": "~56.0.14",
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
-    "@sourcery/core": "workspace:^",
+    "@recipeer/core": "workspace:^",
     "@supabase/supabase-js": "^2.106.2",
     "@tanstack/react-query": "^5.100.14",
     "expo": "~56.0.6",
