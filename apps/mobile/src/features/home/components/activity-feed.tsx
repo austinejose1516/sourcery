@@ -11,9 +11,6 @@ import { FollowChefsSection } from './follow-chefs-section';
 import { NewPostModal } from './new-post-modal';
 import { TriedThisCard } from './tried-this-card';
 
-// The native UITabBar floats over content; lift the FAB and list padding above it.
-const TAB_BAR_HEIGHT = 10;
-
 /**
  * The Activity tab: a "Follow chefs" header, the viewer's social timeline of
  * "tried this" posts, and a floating button to compose a new post.
@@ -29,7 +26,7 @@ export function ActivityFeed() {
   );
 
   // The FAB sits just above the floating tab bar; the list clears both it and the FAB.
-  const bottomClearance = insets.bottom + TAB_BAR_HEIGHT;
+  const bottomClearance = insets.bottom;
 
   return (
     <View style={styles.flex}>
@@ -49,7 +46,7 @@ export function ActivityFeed() {
           ListFooterComponent={<FollowChefsSection />}
           contentContainerStyle={[
             styles.list,
-            { paddingBottom: bottomClearance + spacing.md + 60 + spacing.lg },
+            { paddingBottom: bottomClearance },
           ]}
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
