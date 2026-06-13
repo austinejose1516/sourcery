@@ -8,8 +8,13 @@
     "node": ">=20"
   },
   "scripts": {
+    "api": "pnpm --filter api dev",
+    "api:start": "pnpm --filter api start",
     "mobile": "pnpm --filter mobile start",
     "mobile:web": "pnpm --filter mobile run web",
+    "ios": "pnpm --filter mobile exec expo run:ios --device",
+    "ios:release": "pnpm --filter mobile exec expo run:ios --device --configuration Release",
+    "ios:sim": "pnpm --filter mobile exec expo run:ios",
     "typecheck": "pnpm -r run typecheck"
   },
   "pnpm": {

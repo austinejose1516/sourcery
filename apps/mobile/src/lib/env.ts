@@ -12,12 +12,16 @@ const schema = z.object({
   EXPO_PUBLIC_SUPABASE_ANON_KEY: z
     .string()
     .min(1, 'Set EXPO_PUBLIC_SUPABASE_ANON_KEY in apps/mobile/.env'),
-  // Base URL of the Hono API (apps/api). Defaults to localhost for the iOS
-  // simulator; set the Mac's LAN IP in apps/mobile/.env for a physical device.
+  // Base URL of the Hono API (apps/api). When unset, the default is mode-aware:
+  // dev builds (expo start / simulator) hit localhost; production builds hit the
+  // deployed Railway API. Set EXPO_PUBLIC_API_URL in apps/mobile/.env to override
+  // (e.g. the Mac's LAN IP for a physical device).
   EXPO_PUBLIC_API_URL: z
     .string()
     .refine((v) => /^https?:\/\//.test(v), 'EXPO_PUBLIC_API_URL must be a full http(s):// URL')
-    .default('http://localhost:8787'),
+    .default(
+      __DEV__ ? 'http://localhost:8787' : 'https://api-production-9c8a.up.railway.app',
+    ),
 });
 
 function loadEnv() {
