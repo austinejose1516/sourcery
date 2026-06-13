@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { env } from './env';
+import { explore } from './routes/explore';
 import { feed } from './routes/feed';
 import { health } from './routes/health';
 import { process as processRoute } from './routes/process';
@@ -19,6 +20,7 @@ app.route('/uploads', uploads);
 app.route('/process', processRoute);
 app.route('/users', users);
 app.route('/feed', feed);
+app.route('/explore', explore);
 app.route('/social', social);
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

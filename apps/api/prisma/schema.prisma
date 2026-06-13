@@ -61,6 +61,7 @@ model User {
   shoppingList      ShoppingList?
   cookingSessions   CookingSession[]
   ingestionJobs     IngestionJob[]
+  collections       Collection[]
 
   @@map("users")
 }
@@ -135,6 +136,7 @@ model Recipe {
   cookingSessions     CookingSession[]
   shoppingListItems   ShoppingListItem[]
   ingestionJob        IngestionJob?
+  inCollections       CollectionRecipe[]
 
   // Indexes for the queries the UI actually runs
   @@index([authorId, publishedAt(sort: Desc)])   // Home feed: recipes from followed users
@@ -490,10 +492,48 @@ enum IngestionStatus {
 }
 
 // ============================================================================
+// COLLECTIONS: curated (editorial) or user-created recipe lists
+// ============================================================================
+// ownerId null = "Curated by Sourcery". The schema already supports user-created
+// collections (ownerId set, isCurated false), though the Explore UI only browses
+// curated ones for now.
+
+model Collection {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title         String
+  description   String?
+  coverImageUrl String?  // R2 or external
+  ownerId       String?  @db.Uuid // null = curated by Sourcery
+  isCurated     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  owner         User?              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  recipes       CollectionRecipe[]
+
+  @@index([ownerId])
+  @@index([isCurated])
+  @@map("collections")
+}
+
+model CollectionRecipe {
+  collectionId String   @db.Uuid
+  recipeId     String   @db.Uuid
+  orderIndex   Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, recipeId])
+  @@index([collectionId, orderIndex])
+  @@map("collection_recipes")
+}
+
+// ============================================================================
 // FUTURE (not built yet, but schema won't block them)
 // ============================================================================
 //
-// Collection / CollectionRecipe  — curated lists, editorial or user-created
 // MealPlan / MealPlanEntry       — weekly planning grid
 // Notification                   — in-app notifications
 // Comment                        — threaded discussion on recipes

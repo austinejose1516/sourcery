@@ -8,7 +8,13 @@
     "scheme": "recipeer",
     "userInterfaceStyle": "light",
     "ios": {
-      "bundleIdentifier": "com.austinejose.recipeer"
+      "bundleIdentifier": "com.austinejose.recipeer",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "NSLocalNetworkUsageDescription": "Sourcery connects to your local development API server over Wi-Fi."
+      }
     },
     "android": {
       "package": "com.austinejose.recipeer",
@@ -35,7 +41,7 @@
             "imageWidth": 76
           }
         }
-      ],
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

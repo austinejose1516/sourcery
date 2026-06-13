@@ -1,73 +1,14 @@
 import { Hono } from 'hono';
 import type { FeedItem, RecipeCardDTO, SuggestedCookDTO } from '@recipeer/core';
 import { prisma } from '../lib/prisma';
+import {
+  authorSelect,
+  recipeInclude,
+  toRecipeCard,
+  viewerLikedPostIds,
+  viewerSavedIds,
+} from '../lib/recipe-card';
 import { getViewerId } from '../lib/viewer';
-
-// ---------------------------------------------------------------------------
-// Shared Prisma selections — keep every recipe/author shape identical so the
-// DTO mappers below always receive the same fields.
-// ---------------------------------------------------------------------------
-const authorSelect = {
-  id: true,
-  username: true,
-  displayName: true,
-  avatarUrl: true,
-  country: true,
-} as const;
-
-const recipeInclude = {
-  author: { select: authorSelect },
-  cuisine: { select: { name: true, slug: true } },
-  region: { select: { name: true, country: true } },
-} as const;
-
-type RecipeRow = {
-  id: string;
-  title: string;
-  titleOriginal: string | null;
-  description: string | null;
-  coverImageUrl: string | null;
-  endorsementCount: number;
-  saveCount: number;
-  publishedAt: Date | null;
-  author: { id: string; username: string; displayName: string; avatarUrl: string | null; country: string | null };
-  cuisine: { name: string; slug: string } | null;
-  region: { name: string; country: string } | null;
-};
-
-function toRecipeCard(r: RecipeRow, savedIds: Set<string>): RecipeCardDTO {
-  return {
-    id: r.id,
-    title: r.title,
-    titleOriginal: r.titleOriginal,
-    description: r.description,
-    cuisine: r.cuisine,
-    region: r.region,
-    author: r.author,
-    coverImageUrl: r.coverImageUrl,
-    endorsementCount: r.endorsementCount,
-    saveCount: r.saveCount,
-    isSaved: savedIds.has(r.id),
-  };
-}
-
-/** Recipe ids the viewer has saved, as a fast membership set. */
-async function viewerSavedIds(viewerId: string): Promise<Set<string>> {
-  const rows = await prisma.recipeSave.findMany({
-    where: { userId: viewerId },
-    select: { recipeId: true },
-  });
-  return new Set(rows.map((s) => s.recipeId));
-}
-
-/** Post ids the viewer has liked, as a fast membership set. */
-async function viewerLikedPostIds(viewerId: string): Promise<Set<string>> {
-  const rows = await prisma.postLike.findMany({
-    where: { userId: viewerId },
-    select: { postId: true },
-  });
-  return new Set(rows.map((l) => l.postId));
-}
 
 export const feed = new Hono()
   // Tonight — newest published recipes across everyone.

@@ -41,6 +41,7 @@ const R = (n: string) => `22222222-2222-4222-8222-2222222222${n}`; // recipes
 const T = (n: string) => `33333333-3333-4333-8333-3333333333${n}`; // tried-this
 const S = (n: string) => `44444444-4444-4444-8444-4444444444${n}`; // cooking sessions
 const C = (n: string) => `55555555-5555-4555-8555-5555555555${n}`; // post comments
+const CO = (n: string) => `66666666-6666-4666-8666-6666666666${n}`; // collections
 
 const USERS = {
   priya: U('01'),
@@ -672,6 +673,45 @@ const COOKING_SESSIONS = [
   { id: S('03'), userId: USERS.beatriz, recipeId: R('01'), currentStep: 5, completedAt: hoursAgo(9), startedAt: hoursAgo(10) },
 ];
 
+// Curated ("by Sourcery") collections — editorial lists the Explore tab browses.
+// recipeIds are ordered as they should appear inside the collection.
+const COLLECTIONS: {
+  id: string;
+  title: string;
+  description: string;
+  cover: string;
+  recipeIds: string[];
+}[] = [
+  {
+    id: CO('01'),
+    title: 'Best of Kerala coastal',
+    description: 'Coconut, curry leaves and the slow Kerala shoreline — Priya’s essentials.',
+    cover: food('1455619452474-d2be8b1e70cd'),
+    recipeIds: [R('01'), R('03'), R('02')],
+  },
+  {
+    id: CO('02'),
+    title: 'Weeknight under 30 min',
+    description: 'Quick, low-effort dishes for the nights you don’t want to cook.',
+    cover: food('1604908176997-125f25cc6f3d'),
+    recipeIds: [R('14'), R('15'), R('06'), R('08')],
+  },
+  {
+    id: CO('03'),
+    title: 'Ramadan favourites',
+    description: 'Tagines and mezze to break the fast with the whole table.',
+    cover: food('1541518763669-27fef04b14ea'),
+    recipeIds: [R('12'), R('13'), R('14'), R('15')],
+  },
+  {
+    id: CO('04'),
+    title: 'Soups for cold nights',
+    description: 'Deep, simmered broths and stews worth the wait.',
+    cover: food('1569718212165-3a8278d5f624'),
+    recipeIds: [R('04'), R('16'), R('01')],
+  },
+];
+
 // ============================================================================
 // Seed orchestration
 // ============================================================================
@@ -832,6 +872,23 @@ async function main() {
     await prisma.cookingSession.upsert({ where: { id: s.id }, update: data, create: { id: s.id, ...data } });
   }
   console.log(`  ✓ ${COOKING_SESSIONS.length} cooking sessions`);
+
+  // 11. Curated collections (upsert by fixed id; rebuild membership) ----------
+  for (const col of COLLECTIONS) {
+    await prisma.$transaction(async (tx) => {
+      const data = {
+        title: col.title, description: col.description,
+        coverImageUrl: col.cover, ownerId: null, isCurated: true,
+      };
+      await tx.collection.upsert({ where: { id: col.id }, update: data, create: { id: col.id, ...data } });
+      await tx.collectionRecipe.deleteMany({ where: { collectionId: col.id } });
+      await tx.collectionRecipe.createMany({
+        data: col.recipeIds.map((recipeId, i) => ({ collectionId: col.id, recipeId, orderIndex: i })),
+        skipDuplicates: true,
+      });
+    });
+  }
+  console.log(`  ✓ ${COLLECTIONS.length} curated collections`);
 
   console.log('\n✅ Seed complete.');
 }
