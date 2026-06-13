@@ -33,6 +33,12 @@ const schema = z.object({
   OPENROUTER_MODEL: z.string().default('google/gemini-3.5-flash'),
   OPENROUTER_BASE_URL: z.string().default('https://openrouter.ai/api/v1'),
 
+  // Supabase project URL (e.g. https://xxx.supabase.co). Used to fetch the
+  // JWKS and validate the issuer when verifying Supabase auth tokens.
+  SUPABASE_URL: z
+    .string()
+    .url('SUPABASE_URL must be the Supabase project URL, e.g. https://xxx.supabase.co'),
+
   PORT: z.coerce.number().default(8787),
   R2_PRESIGN_EXPIRES: z.coerce.number().default(600),
 });

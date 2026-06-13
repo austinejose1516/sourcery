@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { prisma } from '../lib/prisma';
+import { getViewerId } from '../lib/viewer';
 
 export const users = new Hono();
 
@@ -7,10 +8,12 @@ export const users = new Hono();
 // Creates the profile if it doesn't exist yet (upsert); returns the current profile.
 // The trigger handles sign-up, but this covers returning users and edge cases.
 users.post('/sync', async (c) => {
-  const body = await c.req.json<{ userId: string; displayName: string | null; email: string | null }>();
-  const { userId, displayName, email } = body;
-
-  if (!userId) return c.json({ error: 'userId is required' }, 400);
+  // Identity comes from the verified JWT, never the request body.
+  const userId = getViewerId(c);
+  const body = await c.req
+    .json<{ displayName: string | null; email: string | null }>()
+    .catch(() => ({ displayName: null, email: null }));
+  const { displayName, email } = body;
 
   const existing = await prisma.user.findUnique({ where: { id: userId } });
   if (existing) return c.json(existing);
