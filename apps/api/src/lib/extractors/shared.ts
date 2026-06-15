@@ -5,13 +5,46 @@ export interface FetchedVideo {
   mime: string;
 }
 
+/** Video MIME by file extension — Gemini rejects generic application/octet-stream. */
+const VIDEO_MIME_BY_EXT: Record<string, string> = {
+  mp4: 'video/mp4',
+  m4v: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+  mpeg: 'video/mpeg',
+  mpg: 'video/mpeg',
+  avi: 'video/x-msvideo',
+  flv: 'video/x-flv',
+  wmv: 'video/x-ms-wmv',
+  '3gp': 'video/3gpp',
+};
+
+/**
+ * Resolve a real video MIME type. R2 often stores gallery uploads as
+ * `application/octet-stream` (the client PUT didn't set a content type), which
+ * Gemini rejects — so when the response header isn't a `video/*` type, fall
+ * back to the file extension in the URL path, then to video/mp4.
+ */
+export function resolveVideoMime(uri: string, headerContentType: string | null): string {
+  const headerMime = headerContentType?.split(';')[0]?.trim().toLowerCase() ?? '';
+  if (headerMime.startsWith('video/')) return headerMime;
+  let pathname = uri;
+  try {
+    pathname = new URL(uri).pathname;
+  } catch {
+    // not a URL — use the raw string
+  }
+  const ext = pathname.split('.').pop()?.toLowerCase() ?? '';
+  return VIDEO_MIME_BY_EXT[ext] ?? 'video/mp4';
+}
+
 /** Download the video bytes from a (signed) URL, server-side. */
 export async function fetchVideoBytes(uri: string): Promise<FetchedVideo> {
   const res = await fetch(uri);
   if (!res.ok) {
     throw new Error(`Failed to fetch video (${res.status}) from ${uri.slice(0, 120)}`);
   }
-  const mime = res.headers.get('content-type')?.split(';')[0] || 'video/mp4';
+  const mime = resolveVideoMime(uri, res.headers.get('content-type'));
   const bytes = Buffer.from(await res.arrayBuffer());
   return { bytes, mime };
 }
