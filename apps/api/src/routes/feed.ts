@@ -3,6 +3,7 @@ import type { FeedItem, RecipeCardDTO, SuggestedCookDTO } from '@recipeer/core';
 import { prisma } from '../lib/prisma';
 import {
   authorSelect,
+  publishedPublic,
   recipeInclude,
   toRecipeCard,
   viewerLikedPostIds,
@@ -16,7 +17,7 @@ export const feed = new Hono()
     const viewerId = await getViewerId(c);
     const [recipes, savedIds] = await Promise.all([
       prisma.recipe.findMany({
-        where: { status: 'PUBLISHED' },
+        where: publishedPublic,
         include: recipeInclude,
         orderBy: { publishedAt: 'desc' },
         take: 30,
@@ -68,7 +69,7 @@ export const feed = new Hono()
     const viewerId = await getViewerId(c);
     const [recipes, savedIds] = await Promise.all([
       prisma.recipe.findMany({
-        where: { status: 'PUBLISHED' },
+        where: publishedPublic,
         include: recipeInclude,
         orderBy: [{ endorsementCount: 'desc' }, { saveCount: 'desc' }],
         take: 10,
@@ -93,14 +94,14 @@ export const feed = new Hono()
       where: {
         id: { not: viewerId },
         followers: { none: { followerId: viewerId } },
-        recipes: { some: { status: 'PUBLISHED', ...(cuisineIds.length ? { cuisineId: { in: cuisineIds } } : {}) } },
+        recipes: { some: { ...publishedPublic, ...(cuisineIds.length ? { cuisineId: { in: cuisineIds } } : {}) } },
       },
       select: {
         id: true,
         displayName: true,
         avatarUrl: true,
         region: { select: { name: true, country: true } },
-        _count: { select: { recipes: { where: { status: 'PUBLISHED' } } } },
+        _count: { select: { recipes: { where: publishedPublic } } },
       },
       orderBy: { displayName: 'asc' },
       take: 20,
@@ -122,7 +123,7 @@ export const feed = new Hono()
     const viewerId = await getViewerId(c);
     const [recipes, savedIds] = await Promise.all([
       prisma.recipe.findMany({
-        where: { status: 'PUBLISHED' },
+        where: publishedPublic,
         include: recipeInclude,
         orderBy: [{ endorsementCount: 'desc' }, { saveCount: 'desc' }],
         take: 8,

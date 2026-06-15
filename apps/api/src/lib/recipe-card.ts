@@ -5,6 +5,12 @@ import { prisma } from './prisma';
 // Shared recipe/author Prisma shapes + DTO mapper. Kept here so every list
 // endpoint (feed, explore, search) returns identical recipe-card shapes.
 // ---------------------------------------------------------------------------
+/**
+ * Filter for recipes that are safe to surface in public listings (feed,
+ * explore, search). Private recipes and link imports must never leak here.
+ */
+export const publishedPublic = { status: 'PUBLISHED', visibility: 'PUBLIC' } as const;
+
 export const authorSelect = {
   id: true,
   username: true,

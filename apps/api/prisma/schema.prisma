@@ -99,6 +99,7 @@ model Recipe {
   descriptionOriginal String?             // original language
   originalLanguage    String?             // ISO 639-1 code: "ml", "vi", "zh", "ar"
   status              RecipeStatus        @default(DRAFT)
+  visibility          RecipeVisibility    @default(PUBLIC)
   difficulty          Difficulty?
   prepTimeMinutes     Int?
   cookTimeMinutes     Int?
@@ -153,6 +154,11 @@ enum RecipeStatus {
   PROCESSING  // AI pipeline is working on it
   PUBLISHED
   ARCHIVED
+}
+
+enum RecipeVisibility {
+  PUBLIC   // discoverable in feed/explore
+  PRIVATE  // only the author can see it (link imports always live here)
 }
 
 enum Difficulty {
@@ -528,6 +534,29 @@ model CollectionRecipe {
   @@id([collectionId, recipeId])
   @@index([collectionId, orderIndex])
   @@map("collection_recipes")
+}
+
+// ============================================================================
+// IMPORTED VIDEOS: global dedup cache for YouTube (and similar) link imports
+// ============================================================================
+// A link import is extracted ONCE per video; the structured result is cached
+// here keyed by provider + videoId. Each importing user gets their own PRIVATE
+// recipe built from this cache (link imports are never publishable as public).
+
+model ImportedVideo {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider       String   // "youtube"
+  videoId        String   // canonical provider video id
+  sourceUrl      String
+  status         String   @default("PENDING") // PENDING | READY | FAILED
+  structuredData Json?    // cached recipeExtractionSchema output
+  title          String?
+  channel        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([provider, videoId])
+  @@map("imported_videos")
 }
 
 // ============================================================================

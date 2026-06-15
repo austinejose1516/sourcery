@@ -25,7 +25,7 @@ const schema = z.object({
   // Accept either GOOGLE_AI_STUDIO_API_KEY or GEMINI_API_KEY (coalesced below).
   GOOGLE_AI_STUDIO_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
-  GEMINI_MODEL: z.string().default('gemini-flash-latest'),
+  GEMINI_MODEL: z.string().default('gemini-flash-lite-latest'),
   GEMINI_BASE_URL: z.string().default('https://generativelanguage.googleapis.com'),
 
   // OpenRouter (fallback extractor).
@@ -38,6 +38,11 @@ const schema = z.object({
   SUPABASE_URL: z
     .string()
     .url('SUPABASE_URL must be the Supabase project URL, e.g. https://xxx.supabase.co'),
+
+  // trigger.dev — background processing. When TRIGGER_SECRET_KEY is absent the
+  // API runs extraction inline (fire-and-forget) so dev works with no setup.
+  TRIGGER_SECRET_KEY: z.string().optional(),
+  TRIGGER_PROJECT_REF: z.string().optional(),
 
   PORT: z.coerce.number().default(8787),
   R2_PRESIGN_EXPIRES: z.coerce.number().default(600),

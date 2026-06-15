@@ -8,6 +8,7 @@ import type {
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import {
+  publishedPublic,
   recipeInclude,
   toRecipeCard,
   viewerCuisineIds,
@@ -45,7 +46,7 @@ function parseRecipeFilters(c: { req: { query: (k: string) => string | undefined
 
 /** Builds the Prisma `where` for a recipe search from validated filters. */
 function recipeWhere(f: RecipeFilters): Prisma.RecipeWhereInput {
-  const where: Prisma.RecipeWhereInput = { status: 'PUBLISHED' };
+  const where: Prisma.RecipeWhereInput = { ...publishedPublic };
   if (f.cuisine) where.cuisine = { slug: f.cuisine };
   if (f.region) where.region = { name: f.region };
   if (f.difficulty) where.difficulty = f.difficulty;
@@ -127,10 +128,10 @@ const cookSelect = {
   bio: true,
   region: { select: { name: true, country: true } },
   recipes: {
-    where: { status: 'PUBLISHED' as const },
+    where: publishedPublic,
     select: { cuisineId: true, cuisine: { select: { name: true } } },
   },
-  _count: { select: { followers: true, recipes: { where: { status: 'PUBLISHED' as const } } } },
+  _count: { select: { followers: true, recipes: { where: publishedPublic } } },
 } as const;
 
 /**
@@ -140,7 +141,7 @@ const cookSelect = {
 async function fetchCookCards(viewerId: string, q: string | undefined, take: number): Promise<ExploreCookDTO[]> {
   const where: Prisma.UserWhereInput = {
     id: { not: viewerId },
-    recipes: { some: { status: 'PUBLISHED' } },
+    recipes: { some: publishedPublic },
   };
   if (q) {
     const contains = { contains: q, mode: 'insensitive' as const };

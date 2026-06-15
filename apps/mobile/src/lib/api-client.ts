@@ -52,5 +52,16 @@ export const apiGet = <T>(path: string) => request<T>(path, { method: 'GET' });
 export const apiPost = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined });
 
+export const apiPatch = <T>(path: string, body?: unknown) =>
+  request<T>(path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined });
+
 export const apiDelete = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'DELETE', body: body ? JSON.stringify(body) : undefined });
+
+/** Bearer token for direct uploads / requests outside the JSON wrapper. */
+export async function authToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
+export { BASE_URL };

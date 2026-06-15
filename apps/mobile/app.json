@@ -9,6 +9,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.austinejose.recipeer",
+      "icon": {
+        "light": "./assets/images/icon-light.png",
+        "dark": "./assets/images/icon-dark.png"
+      },
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
@@ -41,7 +45,18 @@
             "imageWidth": 76
           }
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Sourcery needs access to your videos so you can turn a cooking clip into a recipe."
+        }
+      ],
+      [
+        "expo-notifications",
+        {}
+      ],
+      "./plugins/with-local-notifications-only"
     ],
     "experiments": {
       "typedRoutes": true,
