@@ -15,6 +15,8 @@
     "ios": "pnpm --filter mobile exec expo run:ios --device",
     "ios:release": "pnpm --filter mobile exec expo run:ios --device --configuration Release",
     "ios:sim": "pnpm --filter mobile exec expo run:ios",
+    "trigger:dev": "pnpm --filter api run trigger:dev",
+    "trigger:deploy": "pnpm --filter api run trigger:deploy",
     "typecheck": "pnpm -r run typecheck"
   },
   "pnpm": {

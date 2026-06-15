@@ -9,6 +9,8 @@
     "try-extract": "tsx scripts/try-extract.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset",
+    "trigger:dev": "npx trigger.dev@4.4.6 dev",
+    "trigger:deploy": "npx trigger.dev@4.4.6 deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

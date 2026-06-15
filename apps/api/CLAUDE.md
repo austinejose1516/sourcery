@@ -200,3 +200,17 @@ client.defineJob({
 Use SDK (`@trigger.dev/sdk`), check `result.ok` before accessing `result.output`
 
 <!-- TRIGGER.DEV basic END -->
+
+## Deploying the worker (this project)
+
+The recipe extraction (`src/trigger/extract-recipe.ts` → `extract-job` → `extractors`) runs on the **trigger.dev worker**, which is deployed **separately from git**. `trigger.dev deploy` bundles your **local files on disk** (committed or not) and ships them to trigger.dev's cloud as a new version. The Railway API only *dispatches* (`extractRecipe.trigger()`); it does **not** run the extraction.
+
+```bash
+pnpm trigger:deploy   # build + ship the worker to prod (also syncs env vars)
+pnpm trigger:dev      # local dev: run tasks on your machine (dev env)
+```
+
+- **`git push` does NOT update the worker.** After changing any code the task imports (extractor, prisma, env…), you must **`pnpm trigger:deploy`** for it to take effect. Keep the two in sync: push *and* deploy.
+- **First run prompts a one-time `trigger.dev login`** (the CLI auth is separate from the API keys).
+- **Env vars** are uploaded automatically on deploy by `syncEnvVars` in `trigger.config.ts` (reads repo-root `.env` + `apps/api/.env`). The worker has its own env, separate from Railway.
+- **Prod vs dev key:** the Railway `TRIGGER_SECRET_KEY` must be a **`tr_prod_*`** key so dispatched runs hit the **deployed** prod worker. A `tr_dev_*` key only runs while `pnpm trigger:dev` is up.
