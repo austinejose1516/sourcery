@@ -52,11 +52,8 @@
           "photosPermission": "Sourcery needs access to your videos so you can turn a cooking clip into a recipe."
         }
       ],
-      [
-        "expo-notifications",
-        {}
-      ],
-      "./plugins/with-local-notifications-only"
+      "expo-font",
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,

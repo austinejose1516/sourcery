@@ -8,9 +8,17 @@ import { env } from '../env';
  * once and caches it in memory, refetching only when a token references a `kid`
  * it hasn't seen — so verification is local and adds no per-request network hop.
  */
-const JWKS = createRemoteJWKSet(new URL(`${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`));
+// env.SUPABASE_URL is optional at the schema level (so the trigger.dev task
+// indexer can import env without it); the API server genuinely needs it, so
+// assert its presence here, at the one place it's used.
+if (!env.SUPABASE_URL) {
+  throw new Error('SUPABASE_URL is required to verify auth tokens (set it in the API environment).');
+}
+const SUPABASE_URL = env.SUPABASE_URL;
 
-const ISSUER = `${env.SUPABASE_URL}/auth/v1`;
+const JWKS = createRemoteJWKSet(new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`));
+
+const ISSUER = `${SUPABASE_URL}/auth/v1`;
 
 /** Hono context variables set by `requireAuth`. */
 export type AuthVariables = { viewerId: string };

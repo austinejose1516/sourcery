@@ -34,10 +34,13 @@ const schema = z.object({
   OPENROUTER_BASE_URL: z.string().default('https://openrouter.ai/api/v1'),
 
   // Supabase project URL (e.g. https://xxx.supabase.co). Used to fetch the
-  // JWKS and validate the issuer when verifying Supabase auth tokens.
+  // JWKS and validate the issuer when verifying Supabase auth tokens. Optional
+  // here so importing env (e.g. the trigger.dev task indexer, which only needs
+  // DB/R2/Gemini) doesn't fail; auth.ts asserts it where the API actually uses it.
   SUPABASE_URL: z
     .string()
-    .url('SUPABASE_URL must be the Supabase project URL, e.g. https://xxx.supabase.co'),
+    .url('SUPABASE_URL must be the Supabase project URL, e.g. https://xxx.supabase.co')
+    .optional(),
 
   // trigger.dev — background processing. When TRIGGER_SECRET_KEY is absent the
   // API runs extraction inline (fire-and-forget) so dev works with no setup.

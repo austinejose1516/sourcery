@@ -19,6 +19,10 @@
 
 generator client {
   provider = "prisma-client-js"
+  // "native" covers local dev (darwin-arm64); "debian-openssl-3.0.x" is the
+  // runtime on trigger.dev's Linux workers — both engines must be generated so
+  // the deployed extract-recipe task can load the Query Engine.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
