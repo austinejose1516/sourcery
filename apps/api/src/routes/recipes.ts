@@ -25,6 +25,7 @@ const updateBody = z.object({
   description: z.string().nullable().optional(),
   baseServings: z.number().int().positive().optional(),
   totalTimeMinutes: z.number().int().nullable().optional(),
+  coverImageUrl: z.string().nullable().optional(),
   ingredients: z
     .array(
       z.object({
@@ -70,12 +71,18 @@ type CardRow = {
   ingestionJob: { sourceType: string } | null;
 };
 
-function toCard(r: CardRow): MyRecipeCardDTO {
+/** Sign a stored R2 key for viewing; passes through full external URLs and nulls. */
+async function signMedia(value: string | null): Promise<string | null> {
+  if (!value) return null;
+  return value.startsWith('uploads/') ? await mediaStore.getSignedUrl(value).catch(() => null) : value;
+}
+
+async function toCard(r: CardRow): Promise<MyRecipeCardDTO> {
   return {
     id: r.id,
     title: r.title,
     titleOriginal: r.titleOriginal,
-    coverImageUrl: r.coverImageUrl,
+    coverImageUrl: await signMedia(r.coverImageUrl),
     status: r.status as MyRecipeCardDTO['status'],
     visibility: r.visibility as MyRecipeCardDTO['visibility'],
     isLinkImport: r.ingestionJob?.sourceType === 'LINK',
@@ -181,9 +188,9 @@ export const recipes = new Hono()
 
     const body: MyRecipesResponse = {
       processing,
-      needsReview: needsReview.map(toCard),
-      published: published.map(toCard),
-      private: privateRecipes.map(toCard),
+      needsReview: await Promise.all(needsReview.map(toCard)),
+      published: await Promise.all(published.map(toCard)),
+      private: await Promise.all(privateRecipes.map(toCard)),
     };
     return c.json(body);
   })
@@ -224,12 +231,8 @@ export const recipes = new Hono()
     const isPublic = r.status === 'PUBLISHED' && r.visibility === 'PUBLIC';
     if (!isOwner && !isPublic) return c.json({ error: 'Not found' }, 404);
 
-    let videoUrl: string | null = null;
-    if (r.originalVideoUrl) {
-      videoUrl = r.originalVideoUrl.startsWith('uploads/')
-        ? await mediaStore.getSignedUrl(r.originalVideoUrl).catch(() => null)
-        : r.originalVideoUrl;
-    }
+    const videoUrl = await signMedia(r.originalVideoUrl);
+    const coverImageUrl = await signMedia(r.coverImageUrl);
 
     const dto: RecipeDetailDTO = {
       id: r.id,
@@ -242,6 +245,7 @@ export const recipes = new Hono()
       totalTimeMinutes: r.totalTimeMinutes,
       baseServings: r.baseServings,
       isLinkImport: r.ingestionJob?.sourceType === 'LINK',
+      coverImageUrl,
       videoUrl,
       ingredients: r.ingredients.map((ing) => ({
         id: ing.id,
@@ -275,7 +279,8 @@ export const recipes = new Hono()
     if (!existing) return c.json({ error: 'Recipe not found' }, 404);
     if (existing.authorId !== viewerId) return c.json({ error: 'Not your recipe' }, 403);
 
-    const { title, description, baseServings, totalTimeMinutes, ingredients, steps } = parsed.data;
+    const { title, description, baseServings, totalTimeMinutes, coverImageUrl, ingredients, steps } =
+      parsed.data;
     await prisma.$transaction(async (tx) => {
       await tx.recipe.update({
         where: { id },
@@ -284,6 +289,7 @@ export const recipes = new Hono()
           ...(description !== undefined ? { description } : {}),
           ...(baseServings !== undefined ? { baseServings } : {}),
           ...(totalTimeMinutes !== undefined ? { totalTimeMinutes } : {}),
+          ...(coverImageUrl !== undefined ? { coverImageUrl } : {}),
         },
       });
       if (ingredients) {
@@ -342,6 +348,17 @@ export const recipes = new Hono()
         publishedAt: r.publishedAt ?? new Date(),
       },
     });
+    return c.json({ ok: true });
+  })
+
+  // Dismiss a failed ingestion job (removes it from the Processing list).
+  .delete('/jobs/:id', async (c) => {
+    const viewerId = getViewerId(c);
+    const id = c.req.param('id');
+    const job = await prisma.ingestionJob.findFirst({ where: { id, userId: viewerId }, select: { status: true } });
+    if (!job) return c.json({ error: 'Job not found' }, 404);
+    if (job.status !== 'FAILED') return c.json({ error: 'Only failed jobs can be dismissed' }, 400);
+    await prisma.ingestionJob.delete({ where: { id } });
     return c.json({ ok: true });
   })
 

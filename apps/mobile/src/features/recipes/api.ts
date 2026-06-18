@@ -22,17 +22,19 @@ export const publishRecipe = (recipeId: string, visibility: RecipeVisibilityDTO)
 
 export const deleteRecipe = (recipeId: string) => apiDelete<{ ok: true }>(`/recipes/${recipeId}`);
 
+export const dismissJob = (jobId: string) => apiDelete<{ ok: true }>(`/recipes/jobs/${jobId}`);
+
 export const ingestUpload = (key: string) => apiPost<{ jobId: string }>('/recipes/ingest', { key });
 
 export const importYouTubeLink = (url: string) =>
   apiPost<{ jobId?: string; recipeId?: string; deduped: boolean }>('/recipes/import-link', { url });
 
 /**
- * Presigns an R2 key then uploads the local video directly to R2 with progress.
- * Returns the object key (to pass to /recipes/ingest). The API never proxies the
- * bytes — the client PUTs straight to the presigned URL.
+ * Presigns an R2 key then uploads a local file directly to R2. Returns the object
+ * key. The API never proxies the bytes — the client PUTs straight to the presigned
+ * URL.
  */
-export async function uploadVideo(
+export async function uploadFile(
   fileUri: string,
   ext: string,
   opts?: {
@@ -61,6 +63,12 @@ export async function uploadVideo(
   }
   return { key };
 }
+
+/** Upload a recipe video (to pass to /recipes/ingest) — alias of uploadFile. */
+export const uploadVideo = uploadFile;
+
+/** Upload a cover/thumbnail image; returns its R2 key for PATCH /recipes/:id. */
+export const uploadImage = (fileUri: string, ext: string) => uploadFile(fileUri, ext);
 
 // Re-exported so callers don't import api-client directly for the rare raw case.
 export { authToken, BASE_URL };

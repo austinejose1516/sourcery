@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ProcessingJobDTO, RecipeVisibilityDTO, UpdateRecipeInput } from '@recipeer/core';
+import type { MyRecipesResponse, ProcessingJobDTO, RecipeVisibilityDTO, UpdateRecipeInput } from '@recipeer/core';
 import {
   deleteRecipe,
+  dismissJob,
   fetchJob,
   fetchMyRecipes,
   fetchRecipeDetail,
@@ -71,5 +72,24 @@ export const useDeleteRecipe = () => {
   return useMutation({
     mutationFn: (recipeId: string) => deleteRecipe(recipeId),
     onSuccess: () => qc.invalidateQueries({ queryKey: recipeKeys.mine }),
+  });
+};
+
+export const useDismissJob = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) => dismissJob(jobId),
+    onMutate: async (jobId) => {
+      await qc.cancelQueries({ queryKey: recipeKeys.mine });
+      const prev = qc.getQueryData<MyRecipesResponse>(recipeKeys.mine);
+      qc.setQueryData<MyRecipesResponse>(recipeKeys.mine, (old) =>
+        old ? { ...old, processing: old.processing.filter((j) => j.jobId !== jobId) } : old,
+      );
+      return { prev };
+    },
+    onError: (_err, _jobId, ctx) => {
+      if (ctx?.prev) qc.setQueryData(recipeKeys.mine, ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: recipeKeys.mine }),
   });
 };

@@ -80,6 +80,8 @@ export interface RecipeDetailDTO {
   totalTimeMinutes: number | null;
   baseServings: number;
   isLinkImport: boolean;
+  /** Signed cover image URL (uploads) or null. */
+  coverImageUrl: string | null;
   /** Signed playback URL (uploads) or the external link (imports). */
   videoUrl: string | null;
   ingredients: RecipeDetailIngredientDTO[];
@@ -92,6 +94,8 @@ export interface UpdateRecipeInput {
   description?: string | null;
   baseServings?: number;
   totalTimeMinutes?: number | null;
+  /** R2 object key of a newly uploaded cover image. */
+  coverImageUrl?: string | null;
   ingredients?: Array<{
     name: string;
     nameOriginal?: string | null;

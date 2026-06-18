@@ -34,6 +34,13 @@ app.route('/explore', explore);
 app.route('/social', social);
 app.route('/recipes', recipes);
 
+// Surface the real cause instead of Hono's opaque "Internal Server Error". Logs the
+// full stack server-side and returns the message to the client (fine for the spike).
+app.onError((err, c) => {
+  console.error('[api] unhandled error', err);
+  return c.json({ error: err instanceof Error ? err.message : 'Internal Server Error' }, 500);
+});
+
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   console.log(`[api] listening on http://localhost:${info.port}`);
 });
