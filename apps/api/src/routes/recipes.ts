@@ -6,7 +6,10 @@ import type {
   ProcessingJobDTO,
   RecipeDetailDTO,
   RecipeExtraction,
+  RecipeViewDTO,
+  TriedRecipeCardDTO,
 } from '@recipeer/core';
+import { formatQuantity } from '@recipeer/core';
 import { enqueueExtraction } from '../lib/jobs';
 import { persistExtraction } from '../lib/persist-recipe';
 import { prisma } from '../lib/prisma';
@@ -20,6 +23,16 @@ const ACTIVE_JOB_STATUSES = ['UPLOADING', 'TRANSCRIBING', 'STRUCTURING', 'TRANSL
 const ingestBody = z.object({ key: z.string().min(1) });
 const importLinkBody = z.object({ url: z.string().min(1) });
 const publishBody = z.object({ visibility: z.enum(['PUBLIC', 'PRIVATE']) });
+const triedBody = z.object({
+  photoUrl: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
+});
+
+/** Compose a human region label like "Kochi, Kerala" from a region + its parent. */
+function regionLabel(region: { name: string; parentRegion?: { name: string } | null } | null): string | null {
+  if (!region) return null;
+  return region.parentRegion ? `${region.name}, ${region.parentRegion.name}` : region.name;
+}
 const updateBody = z.object({
   title: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
@@ -195,6 +208,32 @@ export const recipes = new Hono()
     return c.json(body);
   })
 
+  // The Tried tab — recipes the viewer has marked as cooked (deduped per recipe).
+  .get('/tried', async (c) => {
+    const viewerId = getViewerId(c);
+    const rows = await prisma.triedThis.findMany({
+      where: { userId: viewerId },
+      orderBy: { createdAt: 'desc' },
+      distinct: ['recipeId'],
+      include: { recipe: { select: { id: true, title: true, titleOriginal: true, coverImageUrl: true } } },
+    });
+    const tried: TriedRecipeCardDTO[] = await Promise.all(
+      rows.map(async (t) => ({
+        triedId: t.id,
+        triedAt: t.createdAt.toISOString(),
+        recipe: {
+          id: t.recipe.id,
+          title: t.recipe.title,
+          titleOriginal: t.recipe.titleOriginal,
+          coverImageUrl: await signMedia(t.recipe.coverImageUrl),
+        },
+        photoUrl: await signMedia(t.photoUrl),
+        note: t.note,
+      })),
+    );
+    return c.json({ tried });
+  })
+
   // Poll a single processing job (drives the Processing screen).
   .get('/jobs/:id', async (c) => {
     const viewerId = getViewerId(c);
@@ -264,6 +303,161 @@ export const recipes = new Hono()
         videoStartMs: s.videoStartMs,
         videoEndMs: s.videoEndMs,
       })),
+    };
+    return c.json(dto);
+  })
+
+  // Rich payload for the consumer Recipe Viewer + Cook mode. Same owner-or-public
+  // gate as GET /:id, but joins contributor, taxonomy, social counts, and the
+  // per-step cook data, with viewer-relative flags resolved server-side.
+  .get('/:id/view', async (c) => {
+    const viewerId = getViewerId(c);
+    const r = await prisma.recipe.findUnique({
+      where: { id: c.req.param('id') },
+      include: {
+        region: { include: { parentRegion: { select: { name: true } } } },
+        cuisine: { select: { name: true } },
+        dietaryTags: { include: { dietaryTag: { select: { name: true } } } },
+        author: { include: { region: { include: { parentRegion: { select: { name: true } } } } } },
+        ingredients: { orderBy: { orderIndex: 'asc' } },
+        steps: {
+          orderBy: { stepNumber: 'asc' },
+          include: { stepIngredients: { orderBy: { orderIndex: 'asc' }, include: { ingredient: true } } },
+        },
+      },
+    });
+    if (!r) return c.json({ error: 'Recipe not found' }, 404);
+    const isOwner = r.authorId === viewerId;
+    const isPublic = r.status === 'PUBLISHED' && r.visibility === 'PUBLIC';
+    if (!isOwner && !isPublic) return c.json({ error: 'Not found' }, 404);
+
+    const [isSaved, triedByMe, isFollowing, contribRecipeCount, contribFollowerCount] = await Promise.all([
+      prisma.recipeSave
+        .findFirst({ where: { userId: viewerId, recipeId: r.id }, select: { recipeId: true } })
+        .then(Boolean),
+      prisma.triedThis
+        .findFirst({ where: { userId: viewerId, recipeId: r.id }, select: { id: true } })
+        .then(Boolean),
+      prisma.follow
+        .findFirst({ where: { followerId: viewerId, followingId: r.authorId }, select: { followerId: true } })
+        .then(Boolean),
+      prisma.recipe.count({ where: { authorId: r.authorId, status: 'PUBLISHED' } }),
+      prisma.follow.count({ where: { followingId: r.authorId } }),
+    ]);
+
+    const dto: RecipeViewDTO = {
+      id: r.id,
+      title: r.title,
+      titleOriginal: r.titleOriginal,
+      description: r.description,
+      region: r.region ? { name: r.region.name, country: r.region.country } : null,
+      cuisine: r.cuisine ? { name: r.cuisine.name } : null,
+      difficulty: r.difficulty as RecipeViewDTO['difficulty'],
+      dietaryTags: r.dietaryTags.map((t) => t.dietaryTag.name),
+      totalTimeMinutes: r.totalTimeMinutes,
+      handsOnMinutes: r.prepTimeMinutes,
+      baseServings: r.baseServings,
+      endorsementCount: r.endorsementCount,
+      cookCount: r.cookCount,
+      saveCount: r.saveCount,
+      isSaved,
+      triedByMe,
+      contributor: {
+        id: r.author.id,
+        displayName: r.author.displayName,
+        username: r.author.username,
+        avatarUrl: await signMedia(r.author.avatarUrl),
+        region: regionLabel(r.author.region),
+        country: r.author.country,
+        recipeCount: contribRecipeCount,
+        followerCount: contribFollowerCount,
+        isFollowing,
+      },
+      coverImageUrl: await signMedia(r.coverImageUrl),
+      videoUrl: await signMedia(r.originalVideoUrl),
+      videoDurationMs: r.videoDurationMs,
+      ingredients: r.ingredients.map((ing) => ({
+        id: ing.id,
+        name: ing.name,
+        qty: formatQuantity(ing),
+        substitutionNote: ing.substitutionNote,
+      })),
+      steps: await Promise.all(
+        r.steps.map(async (s) => ({
+          id: s.id,
+          stepNumber: s.stepNumber,
+          summary: s.summary,
+          instruction: s.instruction,
+          timerSeconds: s.timerSeconds,
+          timerLabel: s.timerLabel,
+          caution:
+            s.cautionLevel && s.cautionText
+              ? { level: s.cautionLevel as NonNullable<RecipeViewDTO['steps'][number]['caution']>['level'], text: s.cautionText }
+              : null,
+          donenessCue: s.donenessCue,
+          tipText: s.tipText,
+          clip: s.videoStartMs != null && s.videoEndMs != null ? { startMs: s.videoStartMs, endMs: s.videoEndMs } : null,
+          videoUrl: await signMedia(s.videoSegmentUrl),
+          stepIngredients: s.stepIngredients.map((si) => ({
+            name: si.ingredient.name,
+            qty: si.noteOverride ?? formatQuantity(si.ingredient),
+          })),
+          voice: s.voiceQuestion && s.voiceAnswer ? { question: s.voiceQuestion, answer: s.voiceAnswer } : null,
+        })),
+      ),
+    };
+    return c.json(dto);
+  })
+
+  // Mark a recipe as tried (cook-mode complete screen). Idempotent per viewer:
+  // reuses an existing tried post rather than stacking duplicates, and only bumps
+  // cookCount the first time. Optional photo/note attach to the post.
+  .post('/:id/tried', async (c) => {
+    const viewerId = getViewerId(c);
+    const id = c.req.param('id');
+    const parsed = triedBody.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) return c.json({ error: 'Invalid body', issues: parsed.error.issues }, 400);
+
+    const recipe = await prisma.recipe.findUnique({
+      where: { id },
+      select: { id: true, authorId: true, status: true, visibility: true, title: true, titleOriginal: true, coverImageUrl: true },
+    });
+    if (!recipe) return c.json({ error: 'Recipe not found' }, 404);
+    const isOwner = recipe.authorId === viewerId;
+    const isPublic = recipe.status === 'PUBLISHED' && recipe.visibility === 'PUBLIC';
+    if (!isOwner && !isPublic) return c.json({ error: 'Not found' }, 404);
+
+    const existing = await prisma.triedThis.findFirst({
+      where: { userId: viewerId, recipeId: id },
+      orderBy: { createdAt: 'desc' },
+    });
+    const tried = existing
+      ? await prisma.triedThis.update({
+          where: { id: existing.id },
+          data: {
+            ...(parsed.data.photoUrl !== undefined ? { photoUrl: parsed.data.photoUrl } : {}),
+            ...(parsed.data.note !== undefined ? { note: parsed.data.note } : {}),
+          },
+        })
+      : await prisma.$transaction(async (tx) => {
+          const created = await tx.triedThis.create({
+            data: { userId: viewerId, recipeId: id, photoUrl: parsed.data.photoUrl ?? null, note: parsed.data.note ?? null },
+          });
+          await tx.recipe.update({ where: { id }, data: { cookCount: { increment: 1 } } });
+          return created;
+        });
+
+    const dto: TriedRecipeCardDTO = {
+      triedId: tried.id,
+      triedAt: tried.createdAt.toISOString(),
+      recipe: {
+        id: recipe.id,
+        title: recipe.title,
+        titleOriginal: recipe.titleOriginal,
+        coverImageUrl: await signMedia(recipe.coverImageUrl),
+      },
+      photoUrl: await signMedia(tried.photoUrl),
+      note: tried.note,
     };
     return c.json(dto);
   })

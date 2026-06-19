@@ -117,6 +117,7 @@ model Recipe {
   forkNote            String?             // what the forker changed
   coverImageUrl       String?             // R2
   originalVideoUrl    String?             // R2 — the raw contributor recording
+  videoDurationMs     Int?                // full source-video length, for cook-mode clip scrubber
   originalAudioUrl    String?             // R2 — if audio-only recording
   viewCount           Int                 @default(0)
   saveCount           Int                 @default(0)
@@ -171,10 +172,19 @@ enum Difficulty {
   HARD
 }
 
+// Severity of a per-step safety/quality callout. Maps to the cook-mode UI:
+// CAUTION = "Heads up", WARN = "Take care", CRITICAL = "Important".
+enum CautionLevel {
+  CAUTION
+  WARN
+  CRITICAL
+}
+
 model RecipeStep {
   id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   recipeId            String   @db.Uuid
   stepNumber          Int      // ordered, 1-based
+  summary             String?  // short verb-led label ("Poach the fish") for the outline + cook header
   instruction         String   // English
   instructionOriginal String?  // original language
   videoSegmentUrl     String?  // R2 — AI-extracted clip for this step
@@ -182,11 +192,18 @@ model RecipeStep {
   videoStartMs        Int?
   videoEndMs          Int?
   timerSeconds        Int?     // only if the step involves waiting
+  timerLabel          String?  // short label for the timer ("poaching", "resting")
+  cautionLevel        CautionLevel? // present together with cautionText
+  cautionText         String?
+  donenessCue         String?  // the "Look for…" sensory cue
   tipText             String?  // optional contributor tip
+  voiceQuestion       String?  // seeded hands-free Q&A: what the cook might ask
+  voiceAnswer         String?  // seeded hands-free Q&A: Sourcery's reply
   createdAt           DateTime @default(now())
 
   // Relations
-  recipe              Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recipe              Recipe                 @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  stepIngredients     RecipeStepIngredient[]
 
   @@unique([recipeId, stepNumber])
   @@index([recipeId, stepNumber])
@@ -207,10 +224,28 @@ model RecipeIngredient {
   createdAt        DateTime @default(now())
 
   // Relations
-  recipe           Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recipe           Recipe                 @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  stepIngredients  RecipeStepIngredient[]
 
   @@index([recipeId, orderIndex])
   @@map("recipe_ingredients")
+}
+
+// Links a step to the canonical recipe ingredients it uses, for the cook-mode
+// "For this step" chips. Keeps a single source of truth for ingredient names/qty;
+// noteOverride covers references that aren't a measured quantity ("from step 1").
+model RecipeStepIngredient {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stepId       String  @db.Uuid
+  ingredientId String  @db.Uuid
+  noteOverride String? // shown instead of the ingredient's amount/unit when set
+  orderIndex   Int     // display order within the step
+
+  step       RecipeStep       @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  ingredient RecipeIngredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@index([stepId, orderIndex])
+  @@map("recipe_step_ingredients")
 }
 
 // ============================================================================

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   RefreshControl,
   SectionList,
   StyleSheet,
@@ -12,6 +13,7 @@ import type { MyRecipeCardDTO, ProcessingJobDTO } from '@recipeer/core';
 import { colors, radius, sizing, spacing } from '@recipeer/core';
 
 import { Icon, PressableScale, Text } from '@/components/ui';
+import { useTriedRecipes } from '@/features/recipe-view/hooks';
 import {
   FailedCard,
   NeedsReviewCard,
@@ -19,6 +21,7 @@ import {
   ProcessingCard,
   PublishedCard,
   SectionHeading,
+  TriedCard,
 } from '../components';
 import { useDismissJob, useMyRecipes } from '../hooks';
 import { notifyRecipeReady } from '../notifications';
@@ -99,6 +102,56 @@ const tabStyles = StyleSheet.create({
   underlineActive: { backgroundColor: colors.accent },
 });
 
+/** The Tried tab — recipes the viewer has finished cooking. */
+function TriedTab() {
+  const router = useRouter();
+  const { data, isLoading, isError, isRefetching, refetch } = useTriedRecipes();
+
+  if (isLoading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+  if (isError) {
+    return (
+      <View style={styles.center}>
+        <Text variant="body" color="textSecondary" align="center">
+          Could not load your tried recipes.
+        </Text>
+      </View>
+    );
+  }
+  if (!data || data.length === 0) {
+    return (
+      <View style={styles.center}>
+        <Icon name="checkmark-circle-outline" size={36} color="textSecondary" />
+        <Text variant="heading" align="center">
+          No tries yet
+        </Text>
+        <Text variant="body" color="textSecondary" align="center">
+          Finish cooking a recipe to add it here.
+        </Text>
+      </View>
+    );
+  }
+  return (
+    <FlatList
+      data={data}
+      keyExtractor={(t) => t.triedId}
+      renderItem={({ item }) => (
+        <TriedCard
+          tried={item}
+          onPress={() => router.push({ pathname: '/recipe/[recipeId]', params: { recipeId: item.recipe.id } })}
+        />
+      )}
+      contentContainerStyle={styles.list}
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={() => refetch()} />}
+    />
+  );
+}
+
 export function MyRecipesScreen() {
   const router = useRouter();
   const query = useMyRecipes();
@@ -161,8 +214,13 @@ export function MyRecipesScreen() {
 
   const isEmpty = data && sections.length === 0;
 
-  function navigateToRecipe(recipeId: string) {
+  // Drafts open the editor; finished recipes open the consumer viewer.
+  function navigateToReview(recipeId: string) {
     router.push({ pathname: '/review/[recipeId]', params: { recipeId } });
+  }
+
+  function navigateToView(recipeId: string) {
+    router.push({ pathname: '/recipe/[recipeId]', params: { recipeId } });
   }
 
   function navigateToJob(job: ProcessingJobDTO) {
@@ -193,15 +251,7 @@ export function MyRecipesScreen() {
             </Text>
           </View>
         ) : activeTab === 'tried' ? (
-          <View style={styles.center}>
-            <Icon name="checkmark-circle-outline" size={36} color="textSecondary" />
-            <Text variant="heading" align="center">
-              No tries yet
-            </Text>
-            <Text variant="body" color="textSecondary" align="center">
-              Mark recipes as tried to build your cooking history.
-            </Text>
-          </View>
+          <TriedTab />
         ) : query.isLoading ? (
           <View style={styles.center}>
             <ActivityIndicator color={colors.primary} />
@@ -248,21 +298,21 @@ export function MyRecipesScreen() {
                   return (
                     <NeedsReviewCard
                       recipe={item.recipe}
-                      onPress={() => navigateToRecipe(item.recipe.id)}
+                      onPress={() => navigateToReview(item.recipe.id)}
                     />
                   );
                 case 'published':
                   return (
                     <PublishedCard
                       recipe={item.recipe}
-                      onPress={() => navigateToRecipe(item.recipe.id)}
+                      onPress={() => navigateToView(item.recipe.id)}
                     />
                   );
                 case 'private':
                   return (
                     <PrivateDraftCard
                       recipe={item.recipe}
-                      onPress={() => navigateToRecipe(item.recipe.id)}
+                      onPress={() => navigateToView(item.recipe.id)}
                     />
                   );
               }

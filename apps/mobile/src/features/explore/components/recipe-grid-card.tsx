@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import type { RecipeCardDTO } from '@recipeer/core';
 import { colors, radius, spacing } from '@recipeer/core';
@@ -16,14 +17,13 @@ export interface RecipeGridCardProps {
 
 /** Compact recipe card for the 2-column Explore grid. */
 export function RecipeGridCard({ recipe, onToggleSave }: RecipeGridCardProps) {
+  const router = useRouter();
   const region = regionLabel(recipe.region);
   return (
     <PressableScale
       accessibilityRole="button"
       style={styles.card}
-      onPress={() => {
-        // TODO: navigate to the recipe detail screen (out of scope for this pass).
-      }}>
+      onPress={() => router.push({ pathname: '/recipe/[recipeId]', params: { recipeId: recipe.id } })}>
       <View style={styles.cover}>
         {recipe.coverImageUrl ? (
           <Image source={recipe.coverImageUrl} style={styles.image} contentFit="cover" transition={200} />

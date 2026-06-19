@@ -26,6 +26,7 @@ config({ path: resolve(process.cwd(), '.env') });
 import {
   PrismaClient,
   type Difficulty,
+  type CautionLevel,
   type CookingExperience,
   type UnitPreference,
   type SpiceTolerance,
@@ -184,9 +185,18 @@ type SeedIngredient = {
   name: string; nameOriginal?: string; amount?: number; unit?: string;
   quantityNote?: string; groupLabel?: string; substitutionNote?: string;
 };
+// A per-step ingredient chip, referencing a recipe ingredient by name. `note`
+// overrides the displayed quantity (e.g. "from step 1") when it isn't a measure.
+type SeedStepIngredientRef = { name: string; note?: string };
 type SeedStep = {
+  summary?: string; // short verb-led label for the outline + cook header
   instruction: string; instructionOriginal?: string;
-  startS?: number; endS?: number; timerSeconds?: number; tipText?: string;
+  startS?: number; endS?: number; timerSeconds?: number; timerLabel?: string;
+  caution?: { level: CautionLevel; text: string };
+  doneness?: string; // the "Look for…" sensory cue
+  tipText?: string;
+  voiceQ?: string; voiceA?: string; // seeded hands-free Q&A
+  stepIngredients?: SeedStepIngredientRef[];
 };
 type SeedRecipe = {
   id: string;
@@ -203,6 +213,7 @@ type SeedRecipe = {
   cook: number;
   servings: number;
   cover: string;
+  videoDurationMs?: number; // full source-video length, for the cook-mode scrubber
   dietary: string[]; // slugs
   counts: { view: number; save: number; cook: number; endorse: number };
   ingredients: SeedIngredient[];
@@ -217,27 +228,88 @@ const SEED_RECIPES: SeedRecipe[] = [
     description:
       'Kerala coastal stew — kingfish in turmeric-yellow coconut milk, finished with curry leaves and green chillies.',
     descriptionOriginal: 'കേരള തീരദേശ മീൻ കറി — മഞ്ഞൾ ചേർത്ത തേങ്ങാപ്പാലിൽ.',
-    difficulty: 'MEDIUM', prep: 15, cook: 25, servings: 4,
+    difficulty: 'EASY', prep: 15, cook: 30, servings: 4,
     cover: food('1455619452474-d2be8b1e70cd'),
+    videoDurationMs: 298_000, // 4:58
     dietary: ['pescatarian', 'gluten-free', 'dairy-free'],
-    counts: { view: 1240, save: 210, cook: 64, endorse: 18 },
+    counts: { view: 1240, save: 1840, cook: 230, endorse: 18 },
+    // Quantities live in quantityNote so the display matches the contributor's
+    // own phrasing ("½ tsp", "1 thumb", "to taste"); the cook-mode "for this
+    // step" chips reuse these same rows via stepIngredients below.
     ingredients: [
-      { name: 'Kingfish steaks', nameOriginal: 'നെയ്മീൻ', amount: 600, unit: 'g', groupLabel: 'Fish', substitutionNote: 'Pomfret or seabass work well too' },
-      { name: 'Turmeric powder', amount: 0.5, unit: 'tsp', groupLabel: 'Fish' },
-      { name: 'Coconut oil', amount: 2, unit: 'tbsp', groupLabel: 'Stew' },
-      { name: 'Shallots', nameOriginal: 'ചെറിയ ഉള്ളി', amount: 8, quantityNote: 'thinly sliced', groupLabel: 'Stew' },
-      { name: 'Ginger', amount: 1, unit: 'tbsp', quantityNote: 'julienned', groupLabel: 'Stew' },
-      { name: 'Green chillies', amount: 4, quantityNote: 'slit', groupLabel: 'Stew', substitutionNote: 'Use fewer for milder heat' },
+      { name: 'Kingfish steaks', nameOriginal: 'നെയ്മീൻ', quantityNote: '500 g', groupLabel: 'Fish', substitutionNote: 'Pomfret or seabass work well too' },
+      { name: 'Turmeric', quantityNote: '½ tsp', groupLabel: 'Fish' },
+      { name: 'Salt', quantityNote: 'to taste', groupLabel: 'Fish' },
+      { name: 'Coconut oil', quantityNote: '2 tbsp', groupLabel: 'Stew' },
+      { name: 'Shallots', nameOriginal: 'ചെറിയ ഉള്ളി', quantityNote: '6, sliced', groupLabel: 'Stew' },
+      { name: 'Ginger', quantityNote: '1 thumb, julienned', groupLabel: 'Stew' },
+      { name: 'Garlic', quantityNote: '4 cloves, sliced', groupLabel: 'Stew' },
+      { name: 'Green chillies', quantityNote: '4, slit', groupLabel: 'Stew', substitutionNote: 'Use fewer for milder heat' },
       { name: 'Curry leaves', nameOriginal: 'കറിവേപ്പില', quantityNote: '2 sprigs', groupLabel: 'Stew' },
-      { name: 'Thin coconut milk', amount: 400, unit: 'ml', groupLabel: 'Stew' },
-      { name: 'Thick coconut milk', amount: 200, unit: 'ml', groupLabel: 'Stew' },
+      { name: 'Thin coconut milk', quantityNote: '200 ml', groupLabel: 'Stew' },
+      { name: 'Thick coconut milk', quantityNote: '400 ml', groupLabel: 'Stew', substitutionNote: 'Or creamed coconut + warm water' },
+      { name: 'Tomato', quantityNote: '1, sliced', groupLabel: 'Finish' },
     ],
     steps: [
-      { instruction: 'Rub the fish with turmeric and a little salt; rest 10 minutes.', startS: 0, endS: 35, tipText: 'Pat the fish dry first so the turmeric clings.' },
-      { instruction: 'Warm coconut oil and soften shallots, ginger, green chillies and curry leaves without browning.', startS: 35, endS: 95 },
-      { instruction: 'Pour in the thin coconut milk and simmer gently.', startS: 95, endS: 140, timerSeconds: 300 },
-      { instruction: 'Slide in the fish and cook until just done.', startS: 140, endS: 215, timerSeconds: 420, tipText: 'Do not stir hard — nudge the pan instead so the fish stays whole.' },
-      { instruction: 'Finish with thick coconut milk; warm through but do not boil.', startS: 215, endS: 250, tipText: 'Boiling splits the coconut milk.' },
+      {
+        summary: 'Marinate the fish',
+        instruction: 'Rub the kingfish steaks all over with turmeric and salt. Set them aside while you prep the aromatics.',
+        startS: 0, endS: 30,
+        tipText: 'Pat the steaks dry first — a wet surface won’t hold the spice.',
+        doneness: 'Evenly coated, with a faint golden-yellow tinge.',
+        voiceQ: 'What do I need for this step?',
+        voiceA: 'Just the fish, turmeric and salt. Rub it on all over and set it aside — no cooking yet.',
+        stepIngredients: [{ name: 'Kingfish steaks' }, { name: 'Turmeric' }, { name: 'Salt' }],
+      },
+      {
+        summary: 'Soften the aromatics',
+        instruction: 'Warm the coconut oil in a wide pan. Add the shallots, ginger, garlic and green chillies. Cook them gently — soften, don’t brown.',
+        startS: 42, endS: 90, timerSeconds: 300, timerLabel: 'gentle cook',
+        caution: { level: 'WARN', text: 'Keep the heat low. Browned aromatics turn the whole stew bitter.' },
+        doneness: 'Soft and translucent — never coloured.',
+        voiceQ: 'How long do these cook?',
+        voiceA: 'About five minutes on low. They should go soft and glassy — pull the heat back if they start to colour.',
+        stepIngredients: [{ name: 'Coconut oil' }, { name: 'Shallots' }, { name: 'Ginger' }, { name: 'Garlic' }, { name: 'Green chillies' }],
+      },
+      {
+        summary: 'Build the broth',
+        instruction: 'Tear in the curry leaves, then pour in the thin coconut milk. Bring it to a low, lazy simmer.',
+        startS: 90, endS: 115,
+        caution: { level: 'CAUTION', text: 'Stand back as the curry leaves hit the oil — they spit.' },
+        doneness: 'Barely bubbling around the rim of the pan.',
+        voiceQ: 'Is it ready for the milk?',
+        voiceA: 'Once the curry leaves are in and crackling, pour the thin coconut milk straight in and let it come to a gentle simmer.',
+        stepIngredients: [{ name: 'Curry leaves' }, { name: 'Thin coconut milk' }],
+      },
+      {
+        summary: 'Poach the fish',
+        instruction: 'Slide the fish steaks into the broth. Spoon the sauce over the top and let them poach — resist the urge to stir.',
+        startS: 130, endS: 185, timerSeconds: 480, timerLabel: 'poaching',
+        caution: { level: 'WARN', text: 'Don’t stir. Spoon broth over the fish instead, or the steaks break apart.' },
+        doneness: 'Flesh turns opaque and flakes under light pressure.',
+        voiceQ: 'How do I know the fish is done?',
+        voiceA: 'Give it about eight minutes. The flesh turns from glossy to opaque and flakes when you press it gently.',
+        stepIngredients: [{ name: 'Kingfish steaks', note: 'from step 1' }],
+      },
+      {
+        summary: 'Finish with coconut',
+        instruction: 'Take the pan off the heat. Swirl in the thick coconut milk and the sliced tomato. Warm it through — never let it boil.',
+        startS: 185, endS: 223,
+        caution: { level: 'CRITICAL', text: 'Off the heat first. Boiling splits the coconut milk and the stew turns grainy.' },
+        doneness: 'Silky and just steaming, with no bubbles breaking the surface.',
+        voiceQ: 'Can I let it boil?',
+        voiceA: 'No — keep it off the heat. Boiling splits the coconut milk. Just warm it through until it steams.',
+        stepIngredients: [{ name: 'Thick coconut milk' }, { name: 'Tomato' }],
+      },
+      {
+        summary: 'Rest & serve',
+        instruction: 'Cover and rest for 5 minutes so the flavours settle. Serve with appam or steamed rice.',
+        startS: 223, endS: 243, timerSeconds: 300, timerLabel: 'resting',
+        tipText: 'The rest is where the spices fold into the coconut — don’t skip it.',
+        doneness: 'Slightly thickened and glossy.',
+        voiceQ: 'Can I serve it now?',
+        voiceA: 'Give it five minutes to rest first so it settles, then serve it with appam or steamed rice.',
+      },
     ],
   },
   {
@@ -783,6 +855,7 @@ async function main() {
         cuisineId: cuisineId.get(r.cuisine) ?? null,
         regionId: regionId.get(r.region) ?? null,
         coverImageUrl: r.cover,
+        videoDurationMs: r.videoDurationMs ?? null,
         viewCount: r.counts.view, saveCount: r.counts.save,
         cookCount: r.counts.cook, endorsementCount: r.counts.endorse,
         publishedAt: new Date(),
@@ -801,13 +874,39 @@ async function main() {
       });
       await tx.recipeStep.createMany({
         data: r.steps.map((s, i) => ({
-          recipeId: r.id, stepNumber: i + 1,
+          recipeId: r.id, stepNumber: i + 1, summary: s.summary ?? null,
           instruction: s.instruction, instructionOriginal: s.instructionOriginal ?? null,
           videoStartMs: s.startS != null ? Math.round(s.startS * 1000) : null,
           videoEndMs: s.endS != null ? Math.round(s.endS * 1000) : null,
-          timerSeconds: s.timerSeconds ?? null, tipText: s.tipText ?? null,
+          timerSeconds: s.timerSeconds ?? null, timerLabel: s.timerLabel ?? null,
+          cautionLevel: s.caution?.level ?? null, cautionText: s.caution?.text ?? null,
+          donenessCue: s.doneness ?? null, tipText: s.tipText ?? null,
+          voiceQuestion: s.voiceQ ?? null, voiceAnswer: s.voiceA ?? null,
         })),
       });
+
+      // Link per-step ingredient chips to the canonical ingredient rows (createMany
+      // doesn't return ids, so re-read the rows we just inserted to build the map).
+      const hasStepIngredients = r.steps.some((s) => s.stepIngredients?.length);
+      if (hasStepIngredients) {
+        const [createdSteps, createdIngs] = await Promise.all([
+          tx.recipeStep.findMany({ where: { recipeId: r.id }, select: { id: true, stepNumber: true } }),
+          tx.recipeIngredient.findMany({ where: { recipeId: r.id }, select: { id: true, name: true } }),
+        ]);
+        const stepIdByNumber = new Map(createdSteps.map((s) => [s.stepNumber, s.id]));
+        const ingIdByName = new Map(createdIngs.map((i) => [i.name, i.id]));
+        const links = r.steps.flatMap((s, i) =>
+          (s.stepIngredients ?? []).flatMap((ref, j) => {
+            const stepId = stepIdByNumber.get(i + 1);
+            const ingredientId = ingIdByName.get(ref.name);
+            return stepId && ingredientId
+              ? [{ stepId, ingredientId, noteOverride: ref.note ?? null, orderIndex: j }]
+              : [];
+          }),
+        );
+        if (links.length) await tx.recipeStepIngredient.createMany({ data: links });
+      }
+
       if (r.dietary.length) {
         await tx.recipeDietaryTag.createMany({
           data: r.dietary.map((slug) => ({ recipeId: r.id, dietaryTagId: tagId.get(slug)! })),

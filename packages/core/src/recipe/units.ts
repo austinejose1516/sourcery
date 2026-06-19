@@ -53,3 +53,23 @@ export const UNIT_ABBREVIATIONS: Record<string, string> = {
 export function abbreviateUnits(text: string): string {
   return text.replace(/[a-zA-Z]+/g, (word) => UNIT_ABBREVIATIONS[word.toLowerCase()] ?? word);
 }
+
+/**
+ * Compose an ingredient's display quantity from its structured parts, preferring a
+ * measured amount+unit and falling back to the free-text note ("to taste", "from
+ * step 1"). Returns null when there is nothing to show ("6 eggs" → unit-less "6").
+ *   { amount: 500, unit: 'grams' }        → "500 g"
+ *   { amount: 6 }                         → "6"
+ *   { quantityNote: 'to taste' }          → "to taste"
+ */
+export function formatQuantity(input: {
+  amount?: number | null;
+  unit?: string | null;
+  quantityNote?: string | null;
+}): string | null {
+  if (input.amount != null) {
+    const unitPart = input.unit ? ` ${abbreviateUnits(input.unit)}` : '';
+    return `${input.amount}${unitPart}`;
+  }
+  return input.quantityNote ?? null;
+}

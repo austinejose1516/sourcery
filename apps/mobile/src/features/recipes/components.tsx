@@ -1,5 +1,5 @@
 import { Image, StyleSheet, View } from 'react-native';
-import type { MyRecipeCardDTO, ProcessingJobDTO } from '@recipeer/core';
+import type { MyRecipeCardDTO, ProcessingJobDTO, TriedRecipeCardDTO } from '@recipeer/core';
 import { colors, radius, spacing } from '@recipeer/core';
 
 import { Button, Icon, PressableScale, Text } from '@/components/ui';
@@ -128,6 +128,26 @@ export function PublishedCard({
         <Text variant="caption" color="textSecondary">
           {relativeDate(recipe.updatedAt)}
         </Text>
+      </View>
+      <Icon name="chevron-forward" size={18} color="textSecondary" />
+    </PressableScale>
+  );
+}
+
+export function TriedCard({ tried, onPress }: { tried: TriedRecipeCardDTO; onPress: () => void }) {
+  return (
+    <PressableScale style={styles.row} onPress={onPress}>
+      <Thumb uri={tried.recipe.coverImageUrl} icon="restaurant" />
+      <View style={styles.rowBody}>
+        <Text variant="bodyStrong" numberOfLines={1}>
+          {tried.recipe.title || 'Untitled recipe'}
+        </Text>
+        <View style={styles.sourceRow}>
+          <Icon name="checkmark-circle" size={13} color="herb" />
+          <Text variant="caption" color="textSecondary" numberOfLines={1}>
+            {tried.note?.trim() || 'You cooked this'}
+          </Text>
+        </View>
       </View>
       <Icon name="chevron-forward" size={18} color="textSecondary" />
     </PressableScale>
