@@ -8,7 +8,6 @@ import { useVoiceControl } from '../voice/use-voice-control';
 import { cookColors } from '../cook-theme';
 import { CompleteScreen } from './complete-screen';
 import { CookStep } from './cook-step';
-import { VideoSheet } from './video-sheet';
 import { VoiceOverlay } from './voice-overlay';
 
 export interface CookFlowProps {
@@ -21,7 +20,6 @@ export interface CookFlowProps {
 export function CookFlow({ recipe, onExit }: CookFlowProps) {
   const [screen, setScreen] = useState<'cook' | 'complete'>('cook');
   const [index, setIndex] = useState(0);
-  const [videoOpen, setVideoOpen] = useState(false);
   const voice = useVoiceControl();
   const markTried = useMarkTried(recipe.id);
 
@@ -47,20 +45,18 @@ export function CookFlow({ recipe, onExit }: CookFlowProps) {
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" />
       <CookStep
+        recipeId={recipe.id}
         step={step}
         index={index}
         total={steps.length}
+        hasVideo={recipe.videoKind != null}
         onPrev={prev}
         onNext={next}
         onExit={onExit}
-        onVideo={() => setVideoOpen(true)}
         onVoice={voice.show}
       />
 
       {voice.visible ? <VoiceOverlay step={step} onClose={voice.hide} /> : null}
-      {videoOpen ? (
-        <VideoSheet step={step} index={index} fullDurationMs={recipe.videoDurationMs} onClose={() => setVideoOpen(false)} />
-      ) : null}
     </SafeAreaView>
   );
 }

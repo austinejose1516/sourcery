@@ -6,8 +6,10 @@ import type {
   ProcessingJobDTO,
   RecipeDetailDTO,
   RecipeExtraction,
+  RecipeVideoDTO,
   RecipeViewDTO,
   TriedRecipeCardDTO,
+  VideoKindDTO,
 } from '@recipeer/core';
 import { formatQuantity } from '@recipeer/core';
 import { enqueueExtraction } from '../lib/jobs';
@@ -88,6 +90,13 @@ type CardRow = {
 async function signMedia(value: string | null): Promise<string | null> {
   if (!value) return null;
   return value.startsWith('uploads/') ? await mediaStore.getSignedUrl(value).catch(() => null) : value;
+}
+
+/** Which player a recipe's video needs: an R2 upload, a YouTube link, or none. */
+function videoKindOf(originalVideoUrl: string | null): VideoKindDTO | null {
+  if (!originalVideoUrl) return null;
+  if (originalVideoUrl.startsWith('uploads/')) return 'UPLOAD';
+  return parseYouTubeId(originalVideoUrl) ? 'YOUTUBE' : null;
 }
 
 async function toCard(r: CardRow): Promise<MyRecipeCardDTO> {
@@ -374,7 +383,7 @@ export const recipes = new Hono()
         isFollowing,
       },
       coverImageUrl: await signMedia(r.coverImageUrl),
-      videoUrl: await signMedia(r.originalVideoUrl),
+      videoKind: videoKindOf(r.originalVideoUrl),
       videoDurationMs: r.videoDurationMs,
       ingredients: r.ingredients.map((ing) => ({
         id: ing.id,
@@ -382,29 +391,55 @@ export const recipes = new Hono()
         qty: formatQuantity(ing),
         substitutionNote: ing.substitutionNote,
       })),
-      steps: await Promise.all(
-        r.steps.map(async (s) => ({
-          id: s.id,
-          stepNumber: s.stepNumber,
-          summary: s.summary,
-          instruction: s.instruction,
-          timerSeconds: s.timerSeconds,
-          timerLabel: s.timerLabel,
-          caution:
-            s.cautionLevel && s.cautionText
-              ? { level: s.cautionLevel as NonNullable<RecipeViewDTO['steps'][number]['caution']>['level'], text: s.cautionText }
-              : null,
-          donenessCue: s.donenessCue,
-          tipText: s.tipText,
-          clip: s.videoStartMs != null && s.videoEndMs != null ? { startMs: s.videoStartMs, endMs: s.videoEndMs } : null,
-          videoUrl: await signMedia(s.videoSegmentUrl),
-          stepIngredients: s.stepIngredients.map((si) => ({
-            name: si.ingredient.name,
-            qty: si.noteOverride ?? formatQuantity(si.ingredient),
-          })),
-          voice: s.voiceQuestion && s.voiceAnswer ? { question: s.voiceQuestion, answer: s.voiceAnswer } : null,
+      steps: r.steps.map((s) => ({
+        id: s.id,
+        stepNumber: s.stepNumber,
+        summary: s.summary,
+        instruction: s.instruction,
+        timerSeconds: s.timerSeconds,
+        timerLabel: s.timerLabel,
+        caution:
+          s.cautionLevel && s.cautionText
+            ? { level: s.cautionLevel as NonNullable<RecipeViewDTO['steps'][number]['caution']>['level'], text: s.cautionText }
+            : null,
+        donenessCue: s.donenessCue,
+        tipText: s.tipText,
+        clip: s.videoStartMs != null && s.videoEndMs != null ? { startMs: s.videoStartMs, endMs: s.videoEndMs } : null,
+        stepIngredients: s.stepIngredients.map((si) => ({
+          name: si.ingredient.name,
+          qty: si.noteOverride ?? formatQuantity(si.ingredient),
         })),
-      ),
+        voice: s.voiceQuestion && s.voiceAnswer ? { question: s.voiceQuestion, answer: s.voiceAnswer } : null,
+      })),
+    };
+    return c.json(dto);
+  })
+
+  // On-demand playback descriptor for cook mode's video sheet. Fetched when the
+  // sheet opens so the R2 presigned URL is always fresh (the /view payload only
+  // carries `videoKind` for gating). 404 when the recipe has no playable video.
+  .get('/:id/video', async (c) => {
+    const viewerId = getViewerId(c);
+    const r = await prisma.recipe.findUnique({
+      where: { id: c.req.param('id') },
+      select: { authorId: true, status: true, visibility: true, originalVideoUrl: true, videoDurationMs: true },
+    });
+    if (!r) return c.json({ error: 'Recipe not found' }, 404);
+    const isOwner = r.authorId === viewerId;
+    const isPublic = r.status === 'PUBLISHED' && r.visibility === 'PUBLIC';
+    if (!isOwner && !isPublic) return c.json({ error: 'Not found' }, 404);
+
+    const kind = videoKindOf(r.originalVideoUrl);
+    if (!kind || !r.originalVideoUrl) return c.json({ error: 'No video' }, 404);
+
+    const url = kind === 'UPLOAD' ? await signMedia(r.originalVideoUrl) : r.originalVideoUrl;
+    if (!url) return c.json({ error: 'No video' }, 404);
+
+    const dto: RecipeVideoDTO = {
+      kind,
+      url,
+      youtubeId: kind === 'YOUTUBE' ? parseYouTubeId(r.originalVideoUrl) : null,
+      durationMs: r.videoDurationMs,
     };
     return c.json(dto);
   })

@@ -4,34 +4,37 @@ import type { RecipeViewStepDTO } from '@recipeer/core';
 import { fontFamily, radius, spacing } from '@recipeer/core';
 
 import { PressableScale, Text } from '@/components/ui';
-import { cautionVisual, cookColors, fmtMs } from '../cook-theme';
+import { cautionVisual, cookColors } from '../cook-theme';
 import { StepTimer } from './step-timer';
+import { StepVideo } from './step-video';
 
 export interface CookStepProps {
+  recipeId: string;
   step: RecipeViewStepDTO;
   index: number;
   total: number;
+  /** Whether the recipe has a playable video (gates the inline step video). */
+  hasVideo: boolean;
   onPrev: () => void;
   onNext: () => void;
   onExit: () => void;
-  onVideo: () => void;
   onVoice: () => void;
 }
 
 /** A single dark, large-text cook step with its ingredients, video, timer and cues. */
-export function CookStep({ step, index, total, onPrev, onNext, onExit, onVideo, onVoice }: CookStepProps) {
+export function CookStep({ recipeId, step, index, total, hasVideo, onPrev, onNext, onExit, onVoice }: CookStepProps) {
   const isFirst = index === 0;
   const isLast = index === total - 1;
-  const hasClip = step.clip != null;
+  const canWatch = hasVideo && step.clip != null;
 
   return (
     <View style={styles.root}>
       {/* top bar */}
       <View style={styles.topBar}>
-        <PressableScale accessibilityRole="button" accessibilityLabel="Exit cook mode" onPress={onExit} style={styles.chipBtn}>
-          <Ionicons name="close" size={16} color={cookColors.fg} />
-        </PressableScale>
-        <View style={styles.progress}>
+        <View style={styles.topRow}>
+          <PressableScale accessibilityRole="button" accessibilityLabel="Exit cook mode" onPress={onExit} style={styles.chipBtn}>
+            <Ionicons name="close" size={16} color={cookColors.fg} />
+          </PressableScale>
           <View style={styles.bars}>
             {Array.from({ length: total }).map((_, i) => (
               <View
@@ -43,13 +46,12 @@ export function CookStep({ step, index, total, onPrev, onNext, onExit, onVideo, 
               />
             ))}
           </View>
-          <Text style={styles.progressLabel}>
-            Step {index + 1} of {total}
-          </Text>
+          {/* spacer keeps the progress line centred between the buttons */}
+          <View style={styles.chipBtn} />
         </View>
-        <PressableScale accessibilityRole="button" accessibilityLabel="Voice control" onPress={onVoice} style={styles.chipBtn}>
-          <Ionicons name="mic" size={16} color={cookColors.fg} />
-        </PressableScale>
+        <Text style={styles.progressLabel}>
+          Step {index + 1} of {total}
+        </Text>
       </View>
 
       {/* body */}
@@ -59,7 +61,7 @@ export function CookStep({ step, index, total, onPrev, onNext, onExit, onVideo, 
 
         {step.stepIngredients.length > 0 ? <StepIngredients items={step.stepIngredients} /> : null}
 
-        {hasClip ? <WatchVideoButton step={step} onPress={onVideo} /> : null}
+        {canWatch ? <StepVideo key={step.id} recipeId={recipeId} step={step} /> : null}
 
         {step.timerSeconds ? (
           <View style={styles.block}>
@@ -96,6 +98,9 @@ export function CookStep({ step, index, total, onPrev, onNext, onExit, onVideo, 
           <Text style={styles.nextLabel}>{isLast ? 'Finish' : 'Done — next step'}</Text>
           <Ionicons name={isLast ? 'checkmark' : 'chevron-forward'} size={20} color={cookColors.fg} />
         </PressableScale>
+        <PressableScale accessibilityRole="button" accessibilityLabel="Voice control" onPress={onVoice} style={styles.voiceBtn}>
+          <Ionicons name="mic" size={22} color={cookColors.onAccent} />
+        </PressableScale>
       </View>
     </View>
   );
@@ -114,22 +119,6 @@ function StepIngredients({ items }: { items: RecipeViewStepDTO['stepIngredients'
         ))}
       </View>
     </View>
-  );
-}
-
-function WatchVideoButton({ step, onPress }: { step: RecipeViewStepDTO; onPress: () => void }) {
-  const duration = step.clip ? fmtMs(step.clip.endMs - step.clip.startMs) : null;
-  return (
-    <PressableScale accessibilityRole="button" accessibilityLabel="Watch this step" onPress={onPress} style={[styles.block, styles.watch]}>
-      <View style={styles.watchIcon}>
-        <Ionicons name="play" size={15} color={cookColors.fg} />
-      </View>
-      <View style={styles.watchMeta}>
-        <Text style={styles.watchTitle}>Watch this step</Text>
-        <Text style={styles.watchSub}>{duration ? `${duration} clip from the video` : 'Clip from the video'}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={cookColors.fgMuted} />
-    </PressableScale>
   );
 }
 
@@ -164,12 +153,12 @@ function DonenessCue({ cue }: { cue: string }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  topBar: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   chipBtn: { width: 38, height: 38, borderRadius: radius.pill, backgroundColor: cookColors.chip, alignItems: 'center', justifyContent: 'center' },
-  progress: { flex: 1 },
-  bars: { flexDirection: 'row', gap: spacing.xs },
+  bars: { flex: 1, flexDirection: 'row', gap: spacing.xs },
   bar: { flex: 1, height: 4, borderRadius: 2 },
-  progressLabel: { fontFamily: fontFamily.body, fontSize: 11, color: cookColors.fgMuted, marginTop: 6 },
+  progressLabel: { fontFamily: fontFamily.body, fontSize: 11, color: cookColors.fgMuted, textAlign: 'center', marginTop: -4 },
 
   body: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.lg },
   verb: { fontFamily: fontFamily.bodySemibold, fontSize: 11, letterSpacing: 0.9, color: cookColors.accent, marginBottom: spacing.sm },
@@ -182,12 +171,6 @@ const styles = StyleSheet.create({
   ingChip: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: 7, borderRadius: radius.pill, backgroundColor: cookColors.chip },
   ingName: { fontFamily: fontFamily.body, fontSize: 12.5, color: cookColors.fg },
   ingQty: { fontFamily: fontFamily.body, fontSize: 11.5, color: cookColors.fgMuted },
-
-  watch: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: cookColors.panel, borderWidth: StyleSheet.hairlineWidth, borderColor: cookColors.border },
-  watchIcon: { width: 40, height: 40, borderRadius: radius.sm, backgroundColor: cookColors.primary, alignItems: 'center', justifyContent: 'center' },
-  watchMeta: { flex: 1 },
-  watchTitle: { fontFamily: fontFamily.bodyMedium, fontSize: 14, color: cookColors.fg },
-  watchSub: { fontFamily: fontFamily.body, fontSize: 11.5, color: cookColors.fgMuted, marginTop: 1 },
 
   callout: { flexDirection: 'row', gap: spacing.md, padding: spacing.md, borderRadius: radius.md },
   calloutIcon: { width: 26, height: 26, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
@@ -207,6 +190,7 @@ const styles = StyleSheet.create({
   nav: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl },
   prevBtn: { width: 58, height: 58, borderRadius: radius.pill, backgroundColor: cookColors.chip, alignItems: 'center', justifyContent: 'center' },
   prevBtnDisabled: { opacity: 0.4 },
+  voiceBtn: { width: 58, height: 58, borderRadius: radius.pill, backgroundColor: cookColors.accent, alignItems: 'center', justifyContent: 'center' },
   nextBtn: { flex: 1, height: 58, borderRadius: radius.pill, backgroundColor: cookColors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   nextLabel: { fontFamily: fontFamily.bodyMedium, fontSize: 16, color: cookColors.fg },
 });

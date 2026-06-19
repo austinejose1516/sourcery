@@ -2,15 +2,30 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { MarkTriedInput, RecipeViewDTO } from '@recipeer/core';
 
 import { recipeKeys } from '@/features/recipes/hooks';
-import { fetchRecipeView, fetchTriedRecipes, markTried, saveRecipe, unsaveRecipe } from './api';
+import { fetchRecipeVideo, fetchRecipeView, fetchTriedRecipes, markTried, saveRecipe, unsaveRecipe } from './api';
 
 export const recipeViewKeys = {
   view: (id: string) => ['recipe-view', id] as const,
+  video: (id: string) => ['recipe-video', id] as const,
   tried: ['tried-recipes'] as const,
 };
 
 export const useRecipeView = (recipeId: string) =>
   useQuery({ queryKey: recipeViewKeys.view(recipeId), queryFn: () => fetchRecipeView(recipeId) });
+
+/**
+ * Playback descriptor for the video sheet — fetched lazily (only when the sheet
+ * opens, via `enabled`) so the R2 presigned URL is fresh. Not retried/cached long
+ * because the signed URL expires; refetch on each open.
+ */
+export const useRecipeVideo = (recipeId: string, enabled: boolean) =>
+  useQuery({
+    queryKey: recipeViewKeys.video(recipeId),
+    queryFn: () => fetchRecipeVideo(recipeId),
+    enabled,
+    gcTime: 0,
+    staleTime: 0,
+  });
 
 export const useTriedRecipes = () =>
   useQuery({ queryKey: recipeViewKeys.tried, queryFn: fetchTriedRecipes });

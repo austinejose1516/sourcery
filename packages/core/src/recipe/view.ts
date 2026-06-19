@@ -69,8 +69,6 @@ export interface RecipeViewStepDTO {
   tipText: string | null;
   /** Trimmed clip range within the source video, in milliseconds. */
   clip: { startMs: number; endMs: number } | null;
-  /** Signed playback URL for this step's extracted clip, if any. */
-  videoUrl: string | null;
   stepIngredients: ViewStepIngredientDTO[];
   /** Seeded hands-free Q&A shown in the voice overlay; null when none. */
   voice: { question: string; answer: string } | null;
@@ -100,12 +98,32 @@ export interface RecipeViewDTO {
   contributor: ViewContributorDTO;
   /** Signed cover image URL (uploads) or external URL, or null. */
   coverImageUrl: string | null;
-  /** Signed playback URL (uploads) or the external link (imports), or null. */
-  videoUrl: string | null;
+  /**
+   * Which player the recipe's video needs, or null when there's no playable
+   * video (the cook-mode "Watch this step" button is hidden when null). The
+   * actual playback URL is fetched fresh on demand via GET /recipes/:id/video.
+   */
+  videoKind: VideoKindDTO | null;
   /** Full source-video length in ms, for the clip scrubber; may be null. */
   videoDurationMs: number | null;
   ingredients: RecipeViewIngredientDTO[];
   steps: RecipeViewStepDTO[];
+}
+
+export type VideoKindDTO = 'UPLOAD' | 'YOUTUBE';
+
+/**
+ * On-demand playback descriptor (GET /recipes/:id/video). Fetched when the
+ * cook-mode video sheet opens so the R2 presigned URL is always fresh.
+ */
+export interface RecipeVideoDTO {
+  kind: VideoKindDTO;
+  /** Freshly signed R2 URL (UPLOAD) or the source YouTube URL (YOUTUBE). */
+  url: string;
+  /** Parsed YouTube video id for the embed player; null for uploads. */
+  youtubeId: string | null;
+  /** Full source-video length in ms, if known. */
+  durationMs: number | null;
 }
 
 /** A card in the My Recipes → Tried tab. */
