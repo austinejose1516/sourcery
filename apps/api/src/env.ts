@@ -27,6 +27,18 @@ const schema = z.object({
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-flash-lite-latest'),
   GEMINI_BASE_URL: z.string().default('https://generativelanguage.googleapis.com'),
+  // Hands-free voice assistant (POST /voice/*). The "turn" model decides between
+  // calling an app action (function call) and answering in words; the TTS model
+  // speaks replies in Gemini's own voice.
+  GEMINI_VOICE_MODEL: z.string().default('gemini-flash-lite-latest'),
+  GEMINI_TTS_MODEL: z.string().default('gemini-2.5-flash-preview-tts'),
+  GEMINI_TTS_VOICE: z.string().default('Kore'),
+  // Streaming voice (the Gemini Live WebSocket proxied by GET /voice/live). The
+  // half-cascade "...-live-2.5-flash" model is the reliable default for our
+  // tool-driven assistant; the native-audio models (e.g.
+  // gemini-3.1-flash-live-preview) sound better but historically fumble function
+  // calling — swap via env once that's solid.
+  GEMINI_LIVE_MODEL: z.string().default('gemini-live-2.5-flash'),
 
   // OpenRouter (fallback extractor).
   OPENROUTER_API_KEY: z.string().optional(),

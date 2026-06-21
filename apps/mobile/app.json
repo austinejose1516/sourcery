@@ -54,7 +54,35 @@
       ],
       "expo-font",
       "expo-image",
-      "expo-video"
+      "expo-video",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Sourcery uses your microphone for hands-free voice control while you cook."
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Sourcery uses your microphone for hands-free voice control while you cook.",
+          "speechRecognitionPermission": "Sourcery uses speech recognition to understand your voice commands and questions."
+        }
+      ],
+      [
+        "react-native-audio-api",
+        {
+          "iosBackgroundMode": true,
+          "iosMicrophonePermission": "Sourcery uses your microphone for hands-free voice control while you cook."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "buildReactNativeFromSource": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
