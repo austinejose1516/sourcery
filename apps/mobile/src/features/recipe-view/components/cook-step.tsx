@@ -4,6 +4,7 @@ import type { RecipeViewStepDTO } from '@recipeer/core';
 import { fontFamily, radius, spacing } from '@recipeer/core';
 
 import { PressableScale, Text } from '@/components/ui';
+import type { VoiceStatus } from '@/features/voice';
 import { cautionVisual, cookColors } from '../cook-theme';
 import { StepTimer } from './step-timer';
 import { StepVideo } from './step-video';
@@ -15,17 +16,30 @@ export interface CookStepProps {
   total: number;
   /** Whether the recipe has a playable video (gates the inline step video). */
   hasVideo: boolean;
+  /** Live assistant state, so the chip/mic can reflect listening vs. idle. */
+  voiceStatus: VoiceStatus;
   onPrev: () => void;
   onNext: () => void;
   onExit: () => void;
   onVoice: () => void;
 }
 
+const VOICE_CHIP_LABEL: Record<VoiceStatus, string> = {
+  idle: 'Tap the mic to go hands-free',
+  wake: 'Say “Hey Chef” to talk',
+  connecting: 'Connecting…',
+  listening: 'Listening…',
+  thinking: 'Thinking…',
+  speaking: 'Speaking…',
+  error: 'Voice unavailable — tap to retry',
+};
+
 /** A single dark, large-text cook step with its ingredients, video, timer and cues. */
-export function CookStep({ recipeId, step, index, total, hasVideo, onPrev, onNext, onExit, onVoice }: CookStepProps) {
+export function CookStep({ recipeId, step, index, total, hasVideo, voiceStatus, onPrev, onNext, onExit, onVoice }: CookStepProps) {
   const isFirst = index === 0;
   const isLast = index === total - 1;
   const canWatch = hasVideo && step.clip != null;
+  const voiceOn = voiceStatus !== 'idle' && voiceStatus !== 'error';
 
   return (
     <View style={styles.root}>
@@ -79,8 +93,8 @@ export function CookStep({ recipeId, step, index, total, hasVideo, onPrev, onNex
       {/* listening chip */}
       <View style={styles.listeningWrap}>
         <PressableScale accessibilityRole="button" accessibilityLabel="Voice control" onPress={onVoice} style={styles.listening}>
-          <View style={styles.listeningDot} />
-          <Text style={styles.listeningText}>Listening · say “next” or “how long?”</Text>
+          <View style={[styles.listeningDot, !voiceOn && styles.listeningDotIdle]} />
+          <Text style={styles.listeningText}>{VOICE_CHIP_LABEL[voiceStatus]}</Text>
         </PressableScale>
       </View>
 
@@ -98,8 +112,12 @@ export function CookStep({ recipeId, step, index, total, hasVideo, onPrev, onNex
           <Text style={styles.nextLabel}>{isLast ? 'Finish' : 'Done — next step'}</Text>
           <Ionicons name={isLast ? 'checkmark' : 'chevron-forward'} size={20} color={cookColors.fg} />
         </PressableScale>
-        <PressableScale accessibilityRole="button" accessibilityLabel="Voice control" onPress={onVoice} style={styles.voiceBtn}>
-          <Ionicons name="mic" size={22} color={cookColors.onAccent} />
+        <PressableScale
+          accessibilityRole="button"
+          accessibilityLabel={voiceOn ? 'Stop voice control' : 'Start voice control'}
+          onPress={onVoice}
+          style={[styles.voiceBtn, voiceOn && styles.voiceBtnActive]}>
+          <Ionicons name={voiceOn ? 'stop' : 'mic'} size={22} color={cookColors.onAccent} />
         </PressableScale>
       </View>
     </View>
@@ -185,12 +203,14 @@ const styles = StyleSheet.create({
   listeningWrap: { alignItems: 'center', paddingBottom: spacing.sm },
   listening: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 7, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: cookColors.chip },
   listeningDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: cookColors.success },
+  listeningDotIdle: { backgroundColor: cookColors.fgMuted },
   listeningText: { fontFamily: fontFamily.bodyMedium, fontSize: 12, color: cookColors.fg },
 
   nav: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl },
   prevBtn: { width: 58, height: 58, borderRadius: radius.pill, backgroundColor: cookColors.chip, alignItems: 'center', justifyContent: 'center' },
   prevBtnDisabled: { opacity: 0.4 },
   voiceBtn: { width: 58, height: 58, borderRadius: radius.pill, backgroundColor: cookColors.accent, alignItems: 'center', justifyContent: 'center' },
+  voiceBtnActive: { backgroundColor: cookColors.danger },
   nextBtn: { flex: 1, height: 58, borderRadius: radius.pill, backgroundColor: cookColors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   nextLabel: { fontFamily: fontFamily.bodyMedium, fontSize: 16, color: cookColors.fg },
 });

@@ -23,6 +23,7 @@ export const cookColors = {
   accent: '#E8A53D', // saffron
   primary: '#C2410C', // paprika
   success: '#7A8B3F', // herb
+  danger: '#D9533F', // chili — used for the active "stop listening" mic
   onAccent: '#1A1208',
 } as const;
 
