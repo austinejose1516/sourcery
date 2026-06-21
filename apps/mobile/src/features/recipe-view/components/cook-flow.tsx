@@ -9,7 +9,6 @@ import { useMarkTried } from '../hooks';
 import { cookColors } from '../cook-theme';
 import { CompleteScreen } from './complete-screen';
 import { CookStep } from './cook-step';
-import { VoiceOverlay } from './voice-overlay';
 
 export interface CookFlowProps {
   recipe: RecipeViewDTO;
@@ -139,9 +138,6 @@ export function CookFlow({ recipe, onExit }: CookFlowProps) {
         onExit={onExit}
         onVoice={assistant.toggle}
       />
-
-      {/* Overlay only for an active session — not while merely armed ('wake'). */}
-      {status !== 'idle' && status !== 'wake' ? <VoiceOverlay onClose={assistant.stop} /> : null}
     </SafeAreaView>
   );
 }

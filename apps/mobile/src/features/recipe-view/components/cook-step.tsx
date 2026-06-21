@@ -1,5 +1,14 @@
+import { useEffect, type ComponentProps } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import Animated, {
+  Easing,
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import type { RecipeViewStepDTO } from '@recipeer/core';
 import { fontFamily, radius, spacing } from '@recipeer/core';
 
@@ -8,6 +17,19 @@ import type { VoiceStatus } from '@/features/voice';
 import { cautionVisual, cookColors } from '../cook-theme';
 import { StepTimer } from './step-timer';
 import { StepVideo } from './step-video';
+
+type IoniconName = ComponentProps<typeof Ionicons>['name'];
+
+/** How the mic surfaces each assistant state — icon, color, whether it pulses, and a label. */
+const MIC_VISUAL: Record<VoiceStatus, { icon: IoniconName; color: string; pulse: boolean; label: string }> = {
+  idle: { icon: 'mic', color: cookColors.accent, pulse: false, label: 'Tap to go hands-free' },
+  wake: { icon: 'mic-outline', color: cookColors.accent, pulse: true, label: 'Listening for “Hey Chef”' },
+  connecting: { icon: 'ellipsis-horizontal', color: cookColors.accent, pulse: true, label: 'Connecting…' },
+  listening: { icon: 'mic', color: cookColors.success, pulse: true, label: 'Listening…' },
+  thinking: { icon: 'ellipsis-horizontal', color: cookColors.accent, pulse: true, label: 'Thinking…' },
+  speaking: { icon: 'volume-high', color: cookColors.primary, pulse: true, label: 'Speaking…' },
+  error: { icon: 'alert', color: cookColors.danger, pulse: false, label: 'Voice unavailable — tap to retry' },
+};
 
 export interface CookStepProps {
   recipeId: string;
@@ -24,21 +46,52 @@ export interface CookStepProps {
   onVoice: () => void;
 }
 
-const VOICE_CHIP_LABEL: Record<VoiceStatus, string> = {
-  idle: 'Tap the mic to go hands-free',
-  wake: 'Say “Hey Chef” to talk',
-  connecting: 'Connecting…',
-  listening: 'Listening…',
-  thinking: 'Thinking…',
-  speaking: 'Speaking…',
-  error: 'Voice unavailable — tap to retry',
-};
+/**
+ * Animated mic that *is* the voice status indicator — a pulsing halo + changing
+ * icon/color for armed / connecting / listening / speaking / error, so there's
+ * no overlay covering the step content.
+ */
+function VoiceMicButton({ status, onPress }: { status: VoiceStatus; onPress: () => void }) {
+  const visual = MIC_VISUAL[status];
+  const pulse = useSharedValue(0);
+
+  useEffect(() => {
+    if (visual.pulse) {
+      // Faster pulse while actively in a turn; slower, calmer while just armed.
+      const duration = status === 'listening' || status === 'speaking' ? 850 : 1500;
+      pulse.value = 0;
+      pulse.value = withRepeat(withTiming(1, { duration, easing: Easing.out(Easing.quad) }), -1, false);
+    } else {
+      cancelAnimation(pulse);
+      pulse.value = withTiming(0, { duration: 150 });
+    }
+  }, [status, visual.pulse, pulse]);
+
+  const haloStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + pulse.value * 0.7 }],
+    opacity: 0.45 * (1 - pulse.value),
+  }));
+
+  return (
+    <View style={styles.micWrap}>
+      <Animated.View pointerEvents="none" style={[styles.micHalo, { backgroundColor: visual.color }, haloStyle]} />
+      <PressableScale
+        accessibilityRole="button"
+        accessibilityLabel={status === 'idle' ? 'Start voice control' : 'Voice control'}
+        onPress={onPress}
+        style={[styles.voiceBtn, { backgroundColor: visual.color }]}>
+        <Ionicons name={visual.icon} size={22} color={cookColors.onAccent} />
+      </PressableScale>
+    </View>
+  );
+}
 
 /** A single dark, large-text cook step with its ingredients, video, timer and cues. */
 export function CookStep({ recipeId, step, index, total, hasVideo, voiceStatus, onPrev, onNext, onExit, onVoice }: CookStepProps) {
   const isFirst = index === 0;
   const isLast = index === total - 1;
   const canWatch = hasVideo && step.clip != null;
+  const voice = MIC_VISUAL[voiceStatus];
   const voiceOn = voiceStatus !== 'idle' && voiceStatus !== 'error';
 
   return (
@@ -90,11 +143,11 @@ export function CookStep({ recipeId, step, index, total, hasVideo, voiceStatus, 
         {step.tipText ? <Text style={styles.tip}>“{step.tipText}”</Text> : null}
       </ScrollView>
 
-      {/* listening chip */}
+      {/* status chip — small + inline, never covers the step */}
       <View style={styles.listeningWrap}>
         <PressableScale accessibilityRole="button" accessibilityLabel="Voice control" onPress={onVoice} style={styles.listening}>
-          <View style={[styles.listeningDot, !voiceOn && styles.listeningDotIdle]} />
-          <Text style={styles.listeningText}>{VOICE_CHIP_LABEL[voiceStatus]}</Text>
+          <View style={[styles.listeningDot, { backgroundColor: voiceOn ? voice.color : cookColors.fgMuted }]} />
+          <Text style={styles.listeningText}>{voice.label}</Text>
         </PressableScale>
       </View>
 
@@ -112,13 +165,7 @@ export function CookStep({ recipeId, step, index, total, hasVideo, voiceStatus, 
           <Text style={styles.nextLabel}>{isLast ? 'Finish' : 'Done — next step'}</Text>
           <Ionicons name={isLast ? 'checkmark' : 'chevron-forward'} size={20} color={cookColors.fg} />
         </PressableScale>
-        <PressableScale
-          accessibilityRole="button"
-          accessibilityLabel={voiceOn ? 'Stop voice control' : 'Start voice control'}
-          onPress={onVoice}
-          style={[styles.voiceBtn, voiceOn && styles.voiceBtnActive]}>
-          <Ionicons name={voiceOn ? 'stop' : 'mic'} size={22} color={cookColors.onAccent} />
-        </PressableScale>
+        <VoiceMicButton status={voiceStatus} onPress={onVoice} />
       </View>
     </View>
   );
@@ -203,14 +250,14 @@ const styles = StyleSheet.create({
   listeningWrap: { alignItems: 'center', paddingBottom: spacing.sm },
   listening: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 7, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: cookColors.chip },
   listeningDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: cookColors.success },
-  listeningDotIdle: { backgroundColor: cookColors.fgMuted },
   listeningText: { fontFamily: fontFamily.bodyMedium, fontSize: 12, color: cookColors.fg },
 
   nav: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl },
   prevBtn: { width: 58, height: 58, borderRadius: radius.pill, backgroundColor: cookColors.chip, alignItems: 'center', justifyContent: 'center' },
   prevBtnDisabled: { opacity: 0.4 },
+  micWrap: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center' },
+  micHalo: { position: 'absolute', width: 58, height: 58, borderRadius: radius.pill },
   voiceBtn: { width: 58, height: 58, borderRadius: radius.pill, backgroundColor: cookColors.accent, alignItems: 'center', justifyContent: 'center' },
-  voiceBtnActive: { backgroundColor: cookColors.danger },
   nextBtn: { flex: 1, height: 58, borderRadius: radius.pill, backgroundColor: cookColors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   nextLabel: { fontFamily: fontFamily.bodyMedium, fontSize: 16, color: cookColors.fg },
 });
