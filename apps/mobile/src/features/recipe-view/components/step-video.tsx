@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { MotiView } from 'moti';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -14,6 +14,8 @@ import { YouTubeSegment } from './youtube-segment';
 export interface StepVideoProps {
   recipeId: string;
   step: RecipeViewStepDTO;
+  /** Bump this (e.g. from a "play the video" voice command) to start playback. */
+  playSignal?: number;
 }
 
 /**
@@ -21,12 +23,19 @@ export interface StepVideoProps {
  * the playback descriptor (so we don't load video until asked), shows a loading
  * animation, then plays the step's segment on loop with a mute toggle.
  */
-export function StepVideo({ recipeId, step }: StepVideoProps) {
+export function StepVideo({ recipeId, step, playSignal = 0 }: StepVideoProps) {
   const clip = step.clip;
   const [started, setStarted] = useState(false);
   const [muted, setMuted] = useState(true);
   const [frameWidth, setFrameWidth] = useState(0);
   const { data: video, isError } = useRecipeVideo(recipeId, started);
+
+  // Start playback when the play signal changes (a voice "play the video" command).
+  // Baselined at mount so remounting on a new step doesn't auto-play.
+  const baseSignal = useRef(playSignal);
+  useEffect(() => {
+    if (playSignal !== baseSignal.current) setStarted(true);
+  }, [playSignal]);
 
   if (!clip) return null;
   const duration = fmtMs(clip.endMs - clip.startMs);

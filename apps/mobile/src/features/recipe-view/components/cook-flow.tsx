@@ -20,6 +20,8 @@ export interface CookFlowProps {
 export function CookFlow({ recipe, onExit }: CookFlowProps) {
   const [screen, setScreen] = useState<'cook' | 'complete'>('cook');
   const [index, setIndex] = useState(0);
+  // Bumped by the "play the video" voice command to start the current step's clip.
+  const [videoPlayNonce, setVideoPlayNonce] = useState(0);
   const assistant = useAssistant();
   const { status } = useVoiceSession();
   const markTried = useMarkTried(recipe.id);
@@ -41,15 +43,30 @@ export function CookFlow({ recipe, onExit }: CookFlowProps) {
 
   const actions = useMemo<VoiceAction[]>(
     () => [
+      // Handlers return a short description of the resulting step so the
+      // assistant can confirm + read it aloud (the Live session's context is set
+      // once at connect time, so the tool result is how it learns the new step).
       {
         name: 'next_step',
         description: 'Advance to the next cooking step ("next", "done", "what\'s next").',
-        handler: () => next(),
+        handler: () => {
+          const { index: i, steps: s } = stateRef.current;
+          next();
+          if (i >= s.length - 1) return 'That was the last step — nice work!';
+          const ns = s[i + 1];
+          return `Step ${i + 2} of ${s.length}${ns.summary ? `, ${ns.summary}` : ''}: ${ns.instruction}`;
+        },
       },
       {
         name: 'previous_step',
         description: 'Go back to the previous cooking step.',
-        handler: () => prev(),
+        handler: () => {
+          const { index: i, steps: s } = stateRef.current;
+          prev();
+          if (i <= 0) return "You're already on the first step.";
+          const ps = s[i - 1];
+          return `Step ${i} of ${s.length}${ps.summary ? `, ${ps.summary}` : ''}: ${ps.instruction}`;
+        },
       },
       {
         name: 'go_to_step',
@@ -61,10 +78,13 @@ export function CookFlow({ recipe, onExit }: CookFlowProps) {
         },
         handler: (args) => {
           const n = Number(args.number);
-          if (!Number.isFinite(n)) return;
+          if (!Number.isFinite(n)) return "I didn't catch which step you meant.";
           const total = stateRef.current.steps.length;
+          const target = Math.min(Math.max(0, n - 1), total - 1);
           setScreen('cook');
-          setIndex(Math.min(Math.max(0, n - 1), total - 1));
+          setIndex(target);
+          const ts = stateRef.current.steps[target];
+          return `Step ${target + 1} of ${total}${ts.summary ? `, ${ts.summary}` : ''}: ${ts.instruction}`;
         },
       },
       {
@@ -72,13 +92,27 @@ export function CookFlow({ recipe, onExit }: CookFlowProps) {
         description: 'Read the current step instruction aloud again.',
         handler: () => {
           const { index: i, steps: s } = stateRef.current;
-          return s[i]?.instruction ?? '';
+          const cur = s[i];
+          return cur ? `Step ${i + 1} of ${s.length}: ${cur.instruction}` : 'No step to repeat.';
+        },
+      },
+      {
+        name: 'play_video',
+        description: "Play this step's video clip when the user asks to watch or show the video.",
+        handler: () => {
+          const { index: i, steps: s, recipe: r } = stateRef.current;
+          if (r.videoKind == null || !s[i]?.clip) return "This step doesn't have a video.";
+          setVideoPlayNonce((n) => n + 1);
+          return 'Playing the video for this step.';
         },
       },
       {
         name: 'exit_cooking',
         description: 'Leave cook mode and go back to the recipe overview.',
-        handler: () => onExit(),
+        handler: () => {
+          onExit();
+          return 'Leaving cook mode.';
+        },
       },
     ],
     [next, prev, onExit],
@@ -108,11 +142,15 @@ export function CookFlow({ recipe, onExit }: CookFlowProps) {
   }, []);
   useVoiceContext(contextProvider);
 
-  // Stop listening when leaving cook mode or finishing.
+  // Arm the wake word on entry so "Hey Chef" works hands-free; fully stop on exit.
   useEffect(() => {
-    if (screen === 'complete') assistant.stop();
+    void assistant.enable();
+    return () => assistant.disable();
+  }, [assistant]);
+  // Stop when the recipe is finished.
+  useEffect(() => {
+    if (screen === 'complete') assistant.disable();
   }, [screen, assistant]);
-  useEffect(() => () => assistant.stop(), [assistant]);
 
   if (screen === 'complete') {
     return (
@@ -133,6 +171,7 @@ export function CookFlow({ recipe, onExit }: CookFlowProps) {
         total={steps.length}
         hasVideo={recipe.videoKind != null}
         voiceStatus={status}
+        videoPlaySignal={videoPlayNonce}
         onPrev={prev}
         onNext={next}
         onExit={onExit}

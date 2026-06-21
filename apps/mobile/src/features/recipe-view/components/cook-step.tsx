@@ -20,15 +20,23 @@ import { StepVideo } from './step-video';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
 
+// Distinct hues per mode (warm theme + one cool "ready" accent).
+const C_IDLE = cookColors.accent; // saffron
+const C_WAKE = '#56B0A2'; // teal — armed / hands-free ready
+const C_CONNECT = '#D8A23E'; // amber — opening
+const C_LISTEN = cookColors.success; // herb green — hearing you
+const C_SPEAK = cookColors.primary; // paprika — talking
+const C_ERROR = cookColors.danger; // chili
+
 /** How the mic surfaces each assistant state — icon, color, whether it pulses, and a label. */
 const MIC_VISUAL: Record<VoiceStatus, { icon: IoniconName; color: string; pulse: boolean; label: string }> = {
-  idle: { icon: 'mic', color: cookColors.accent, pulse: false, label: 'Tap to go hands-free' },
-  wake: { icon: 'mic-outline', color: cookColors.accent, pulse: true, label: 'Listening for “Hey Chef”' },
-  connecting: { icon: 'ellipsis-horizontal', color: cookColors.accent, pulse: true, label: 'Connecting…' },
-  listening: { icon: 'mic', color: cookColors.success, pulse: true, label: 'Listening…' },
-  thinking: { icon: 'ellipsis-horizontal', color: cookColors.accent, pulse: true, label: 'Thinking…' },
-  speaking: { icon: 'volume-high', color: cookColors.primary, pulse: true, label: 'Speaking…' },
-  error: { icon: 'alert', color: cookColors.danger, pulse: false, label: 'Voice unavailable — tap to retry' },
+  idle: { icon: 'mic', color: C_IDLE, pulse: false, label: 'Tap to talk' },
+  wake: { icon: 'sparkles', color: C_WAKE, pulse: true, label: 'Tap or say “Hey Chef”' },
+  connecting: { icon: 'ellipsis-horizontal', color: C_CONNECT, pulse: true, label: 'Connecting…' },
+  listening: { icon: 'mic', color: C_LISTEN, pulse: true, label: 'Listening…' },
+  thinking: { icon: 'sync', color: C_CONNECT, pulse: true, label: 'Thinking…' },
+  speaking: { icon: 'volume-high', color: C_SPEAK, pulse: true, label: 'Speaking…' },
+  error: { icon: 'alert-circle', color: C_ERROR, pulse: false, label: 'Tap to try again' },
 };
 
 export interface CookStepProps {
@@ -40,6 +48,8 @@ export interface CookStepProps {
   hasVideo: boolean;
   /** Live assistant state, so the chip/mic can reflect listening vs. idle. */
   voiceStatus: VoiceStatus;
+  /** Bumped by the "play the video" voice command to start the step's clip. */
+  videoPlaySignal: number;
   onPrev: () => void;
   onNext: () => void;
   onExit: () => void;
@@ -79,15 +89,15 @@ function VoiceMicButton({ status, onPress }: { status: VoiceStatus; onPress: () 
         accessibilityRole="button"
         accessibilityLabel={status === 'idle' ? 'Start voice control' : 'Voice control'}
         onPress={onPress}
-        style={[styles.voiceBtn, { backgroundColor: visual.color }]}>
-        <Ionicons name={visual.icon} size={22} color={cookColors.onAccent} />
+        style={[styles.voiceBtn, { backgroundColor: visual.color, shadowColor: visual.color }]}>
+        <Ionicons name={visual.icon} size={26} color={cookColors.onAccent} />
       </PressableScale>
     </View>
   );
 }
 
 /** A single dark, large-text cook step with its ingredients, video, timer and cues. */
-export function CookStep({ recipeId, step, index, total, hasVideo, voiceStatus, onPrev, onNext, onExit, onVoice }: CookStepProps) {
+export function CookStep({ recipeId, step, index, total, hasVideo, voiceStatus, videoPlaySignal, onPrev, onNext, onExit, onVoice }: CookStepProps) {
   const isFirst = index === 0;
   const isLast = index === total - 1;
   const canWatch = hasVideo && step.clip != null;
@@ -128,7 +138,7 @@ export function CookStep({ recipeId, step, index, total, hasVideo, voiceStatus, 
 
         {step.stepIngredients.length > 0 ? <StepIngredients items={step.stepIngredients} /> : null}
 
-        {canWatch ? <StepVideo key={step.id} recipeId={recipeId} step={step} /> : null}
+        {canWatch ? <StepVideo key={step.id} recipeId={recipeId} step={step} playSignal={videoPlaySignal} /> : null}
 
         {step.timerSeconds ? (
           <View style={styles.block}>
@@ -252,12 +262,27 @@ const styles = StyleSheet.create({
   listeningDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: cookColors.success },
   listeningText: { fontFamily: fontFamily.bodyMedium, fontSize: 12, color: cookColors.fg },
 
-  nav: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl },
+  nav: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl },
   prevBtn: { width: 58, height: 58, borderRadius: radius.pill, backgroundColor: cookColors.chip, alignItems: 'center', justifyContent: 'center' },
   prevBtnDisabled: { opacity: 0.4 },
-  micWrap: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center' },
-  micHalo: { position: 'absolute', width: 58, height: 58, borderRadius: radius.pill },
-  voiceBtn: { width: 58, height: 58, borderRadius: radius.pill, backgroundColor: cookColors.accent, alignItems: 'center', justifyContent: 'center' },
+  // The mic is the hero control — larger than the nav buttons, with a light ring
+  // and a state-colored glow so it always reads as the primary affordance.
+  micWrap: { width: 72, height: 72, alignItems: 'center', justifyContent: 'center' },
+  micHalo: { position: 'absolute', width: 66, height: 66, borderRadius: radius.pill },
+  voiceBtn: {
+    width: 66,
+    height: 66,
+    borderRadius: radius.pill,
+    backgroundColor: cookColors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.28)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55,
+    shadowRadius: 12,
+    elevation: 8,
+  },
   nextBtn: { flex: 1, height: 58, borderRadius: radius.pill, backgroundColor: cookColors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   nextLabel: { fontFamily: fontFamily.bodyMedium, fontSize: 16, color: cookColors.fg },
 });

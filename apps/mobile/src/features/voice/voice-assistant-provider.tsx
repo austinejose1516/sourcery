@@ -9,20 +9,24 @@ import { createLivePlayback, type LivePlayback } from './live/live-playback';
 import { createWakeWord, type WakeWord } from './live/wake-word';
 
 /**
- * Owns the one voice session for the whole app. The machine:
+ * Owns the one voice session for the whole app.
  *
- *   idle ─start()→ wake ─keyword→ connecting ─ready→ listening ⇄ speaking
- *      ▲                                              │ (idle timeout / stop)
- *      └──────────────── stop() ─────────────────────┘
+ *   disabled ─enable()→ wake ⇄ (tap mic / "Hey Chef") → connecting → listening ⇄ speaking
+ *      ▲                                                      │ (tap mic to stop)
+ *      └──────────────────── disable() ──────────────────────┘
  *
- * While "wake" we only run the on-device wake word (no streaming). On the keyword
- * we hand the mic from the wake word to the recorder and stream to Gemini Live
- * (proxied by the API). Half-duplex: the mic pauses while the assistant speaks.
- * Screens drive it via useAssistant() and feed it via useVoiceActions/Context.
+ * `enable()` arms the on-device wake word in the background (so "Hey Chef" can
+ * start a conversation hands-free) — call it when a voice-capable screen mounts.
+ * Tapping the mic (`toggle`) starts a live conversation immediately and keeps it
+ * open continuously until the user taps to stop — no wake word needed once
+ * tapped, no idle timeout. Half-duplex: the mic pauses while the assistant talks.
  */
 interface AssistantApi {
-  start: () => Promise<void>;
-  stop: () => void;
+  /** Arm the background wake word so "Hey Chef" works. Call on screen mount. */
+  enable: () => Promise<void>;
+  /** Fully stop (session + wake word). Call on screen unmount. */
+  disable: () => void;
+  /** Start a live conversation, or stop the active one — the mic button. */
   toggle: () => void;
 }
 
@@ -35,12 +39,10 @@ export function useAssistant(): AssistantApi {
 }
 
 type Phase = 'idle' | 'wake' | 'connecting' | 'listening' | 'speaking';
-
-/** Close the streaming session after this long with no speech, to stop streaming. */
-const IDLE_MS = 15_000;
+const SESSION_PHASES: Phase[] = ['connecting', 'listening', 'speaking'];
 
 export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
-  /** Whether the assistant is armed (wake word runs whenever we're idle). */
+  /** Whether the assistant is armed (wake word runs whenever no session is live). */
   const enabledRef = useRef(false);
   const phaseRef = useRef<Phase>('idle');
 
@@ -48,38 +50,23 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
   const liveRef = useRef<LiveClient | null>(null);
   const captureRef = useRef<MicCapture | null>(null);
   const playbackRef = useRef<LivePlayback | null>(null);
-  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Stable indirection so the wake word's callback always calls the latest startSession. */
+  const startSessionRef = useRef<() => void>(() => {});
 
   /** Per-turn transcript buffers (Gemini streams these incrementally). */
   const inputBufRef = useRef('');
   const outputBufRef = useRef('');
 
-  useEffect(() => {
-    const cleanup = registerGlobalActions();
-    return cleanup;
-  }, []);
+  useEffect(() => registerGlobalActions(), []);
 
   const setPhase = useCallback((phase: Phase) => {
     phaseRef.current = phase;
     useVoiceStore.getState().setStatus(phase);
   }, []);
 
-  const clearIdleTimer = useCallback(() => {
-    if (idleTimerRef.current) {
-      clearTimeout(idleTimerRef.current);
-      idleTimerRef.current = null;
-    }
-  }, []);
-
-  /**
-   * Tear down the live session and re-arm the wake word (or go fully idle).
-   * On the error path pass `keepStatus` so the 'error' message stays on screen
-   * instead of being instantly overwritten by 'wake' — otherwise a failed
-   * session just flickers "connecting" and vanishes with no explanation.
-   */
+  /** Tear down the live session and re-arm the wake word (or go fully idle). */
   const endSession = useCallback(
     async ({ keepStatus = false }: { keepStatus?: boolean } = {}) => {
-      clearIdleTimer();
       captureRef.current?.stop();
       captureRef.current = null;
       playbackRef.current?.destroy();
@@ -88,24 +75,19 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
       liveRef.current = null;
 
       if (enabledRef.current && wakeRef.current) {
-        phaseRef.current = 'wake'; // listening again so the next "Hey Chef" works
+        phaseRef.current = 'wake'; // listening for "Hey Chef" again
         if (!keepStatus) setPhase('wake');
         try {
           await wakeRef.current.start();
         } catch {
-          // mic still busy; leave armed, next keyword attempt will retry
+          // mic still busy; next attempt will retry
         }
       } else if (!keepStatus) {
         setPhase('idle');
       }
     },
-    [clearIdleTimer, setPhase],
+    [setPhase],
   );
-
-  const armIdleTimer = useCallback(() => {
-    clearIdleTimer();
-    idleTimerRef.current = setTimeout(() => void endSession(), IDLE_MS);
-  }, [clearIdleTimer, endSession]);
 
   const runToolCalls = useCallback(
     async (calls: { id?: string; name: string; args: Record<string, unknown> }[]) => {
@@ -142,12 +124,10 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
           // Setup acknowledged — hand the mic to the recorder and start streaming.
           captureRef.current?.start();
           setPhase('listening');
-          armIdleTimer();
           break;
         case 'input_transcript':
           inputBufRef.current += event.text;
           store.setTranscript(inputBufRef.current);
-          armIdleTimer();
           break;
         case 'output_transcript':
           outputBufRef.current += event.text;
@@ -155,7 +135,6 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
           break;
         case 'audio':
           if (phaseRef.current !== 'speaking') {
-            clearIdleTimer(); // don't time out while the assistant is talking
             captureRef.current?.pause(); // half-duplex
             setPhase('speaking');
           }
@@ -163,14 +142,12 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
           break;
         case 'tool_call':
           void runToolCalls(event.calls);
-          armIdleTimer();
           break;
         case 'turn_complete':
           inputBufRef.current = '';
           outputBufRef.current = '';
           captureRef.current?.resume();
           setPhase('listening');
-          armIdleTimer();
           break;
         case 'interrupted':
           playbackRef.current?.stop();
@@ -184,15 +161,56 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
           break;
       }
     },
-    [armIdleTimer, clearIdleTimer, endSession, runToolCalls, setPhase],
+    [endSession, runToolCalls, setPhase],
   );
 
-  /** Wake word heard → open the Gemini Live session. */
+  /** Arm the background wake word (perm + recognizer) so "Hey Chef" works. */
+  const enable = useCallback(async () => {
+    if (enabledRef.current) return;
+
+    const granted = await requestMicPermission();
+    if (!granted) {
+      const store = useVoiceStore.getState();
+      store.setStatus('error');
+      store.setError('Microphone access is needed for voice control.');
+      return;
+    }
+
+    try {
+      configureVoiceSession();
+      const wake = await createWakeWord(
+        () => startSessionRef.current(),
+        (err) => {
+          const store = useVoiceStore.getState();
+          store.setError(err.message);
+          store.setStatus('error');
+        },
+      );
+      wakeRef.current = wake;
+      enabledRef.current = true;
+      const store = useVoiceStore.getState();
+      store.setError(null);
+      store.setReply(null);
+      store.setTranscript('');
+      await wake.start();
+      if (!SESSION_PHASES.includes(phaseRef.current)) setPhase('wake');
+    } catch (e) {
+      const store = useVoiceStore.getState();
+      store.setStatus('error');
+      store.setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [setPhase]);
+
+  /** Open a live conversation (from a mic tap or the wake word). Continuous until stopped. */
   const startSession = useCallback(async () => {
-    if (phaseRef.current !== 'wake') return; // already connecting/active
+    if (SESSION_PHASES.includes(phaseRef.current)) return; // already live
+    if (!enabledRef.current) await enable();
+    if (!enabledRef.current) return; // enable failed (e.g. permission denied)
+
     setPhase('connecting');
     inputBufRef.current = '';
     outputBufRef.current = '';
+    useVoiceStore.getState().setReply(null);
 
     try {
       await wakeRef.current?.stop(); // release the mic for the recorder
@@ -209,47 +227,12 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
       store.setStatus('error');
       await endSession({ keepStatus: true });
     }
-  }, [endSession, handleEvent, setPhase]);
+  }, [enable, endSession, handleEvent, setPhase]);
 
-  const start = useCallback(async () => {
-    if (enabledRef.current) return;
+  startSessionRef.current = () => void startSession();
 
-    const granted = await requestMicPermission();
-    if (!granted) {
-      const store = useVoiceStore.getState();
-      store.setStatus('error');
-      store.setError('Microphone access is needed for voice control.');
-      return;
-    }
-
-    try {
-      configureVoiceSession();
-      const wake = await createWakeWord(
-        () => void startSession(),
-        (err) => {
-          const store = useVoiceStore.getState();
-          store.setError(err.message);
-          store.setStatus('error');
-        },
-      );
-      wakeRef.current = wake;
-      enabledRef.current = true;
-      const store = useVoiceStore.getState();
-      store.setError(null);
-      store.setReply(null);
-      store.setTranscript('');
-      await wake.start();
-      setPhase('wake');
-    } catch (e) {
-      const store = useVoiceStore.getState();
-      store.setStatus('error');
-      store.setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [setPhase, startSession]);
-
-  const stop = useCallback(() => {
+  const disable = useCallback(() => {
     enabledRef.current = false;
-    clearIdleTimer();
     captureRef.current?.stop();
     captureRef.current = null;
     playbackRef.current?.destroy();
@@ -261,13 +244,14 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
     wakeRef.current = null;
     setPhase('idle');
     useVoiceStore.getState().setTranscript('');
-  }, [clearIdleTimer, setPhase]);
+  }, [setPhase]);
 
+  /** Mic button: stop the live conversation if one is active, else start one. */
   const toggle = useCallback(() => {
-    if (enabledRef.current) stop();
-    else void start();
-  }, [start, stop]);
+    if (SESSION_PHASES.includes(phaseRef.current)) void endSession();
+    else void startSession();
+  }, [endSession, startSession]);
 
-  const api = useMemo<AssistantApi>(() => ({ start, stop, toggle }), [start, stop, toggle]);
+  const api = useMemo<AssistantApi>(() => ({ enable, disable, toggle }), [enable, disable, toggle]);
   return <AssistantContext.Provider value={api}>{children}</AssistantContext.Provider>;
 }
