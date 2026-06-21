@@ -71,27 +71,36 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  /** Tear down the live session and re-arm the wake word (or go fully idle). */
-  const endSession = useCallback(async () => {
-    clearIdleTimer();
-    captureRef.current?.stop();
-    captureRef.current = null;
-    playbackRef.current?.destroy();
-    playbackRef.current = null;
-    liveRef.current?.close();
-    liveRef.current = null;
+  /**
+   * Tear down the live session and re-arm the wake word (or go fully idle).
+   * On the error path pass `keepStatus` so the 'error' message stays on screen
+   * instead of being instantly overwritten by 'wake' — otherwise a failed
+   * session just flickers "connecting" and vanishes with no explanation.
+   */
+  const endSession = useCallback(
+    async ({ keepStatus = false }: { keepStatus?: boolean } = {}) => {
+      clearIdleTimer();
+      captureRef.current?.stop();
+      captureRef.current = null;
+      playbackRef.current?.destroy();
+      playbackRef.current = null;
+      liveRef.current?.close();
+      liveRef.current = null;
 
-    if (enabledRef.current && wakeRef.current) {
-      setPhase('wake');
-      try {
-        await wakeRef.current.start();
-      } catch {
-        // mic still busy; leave armed, next keyword attempt will retry
+      if (enabledRef.current && wakeRef.current) {
+        phaseRef.current = 'wake'; // listening again so the next "Hey Chef" works
+        if (!keepStatus) setPhase('wake');
+        try {
+          await wakeRef.current.start();
+        } catch {
+          // mic still busy; leave armed, next keyword attempt will retry
+        }
+      } else if (!keepStatus) {
+        setPhase('idle');
       }
-    } else {
-      setPhase('idle');
-    }
-  }, [clearIdleTimer, setPhase]);
+    },
+    [clearIdleTimer, setPhase],
+  );
 
   const armIdleTimer = useCallback(() => {
     clearIdleTimer();
@@ -171,7 +180,7 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
         case 'error':
           store.setError(event.message);
           store.setStatus('error');
-          void endSession();
+          void endSession({ keepStatus: true });
           break;
       }
     },
@@ -198,7 +207,7 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
       const store = useVoiceStore.getState();
       store.setError(e instanceof Error ? e.message : String(e));
       store.setStatus('error');
-      await endSession();
+      await endSession({ keepStatus: true });
     }
   }, [endSession, handleEvent, setPhase]);
 

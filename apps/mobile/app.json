@@ -82,7 +82,8 @@
             "buildReactNativeFromSource": true
           }
         }
-      ]
+      ],
+      "./plugins/with-no-push"
     ],
     "experiments": {
       "typedRoutes": true,
