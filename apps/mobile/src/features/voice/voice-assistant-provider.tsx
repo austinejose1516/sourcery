@@ -51,6 +51,8 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
   const liveRef = useRef<LiveClient | null>(null);
   const captureRef = useRef<MicCapture | null>(null);
   const playbackRef = useRef<LivePlayback | null>(null);
+  /** Pending "resume the mic after the reply finishes playing" timer. */
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /** Per-turn transcript buffers (Gemini streams these incrementally). */
   const inputBufRef = useRef('');
@@ -63,9 +65,17 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
     useVoiceStore.getState().setStatus(phase);
   }, []);
 
+  const clearResumeTimer = useCallback(() => {
+    if (resumeTimerRef.current) {
+      clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = null;
+    }
+  }, []);
+
   /** Tear down the live session and go idle (keep an error message if asked). */
   const endSession = useCallback(
     ({ keepStatus = false }: { keepStatus?: boolean } = {}) => {
+      clearResumeTimer();
       captureRef.current?.stop();
       captureRef.current = null;
       playbackRef.current?.destroy();
@@ -74,7 +84,7 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
       liveRef.current = null;
       if (!keepStatus) setPhase('idle');
     },
-    [setPhase],
+    [clearResumeTimer, setPhase],
   );
 
   const runToolCalls = useCallback(
@@ -123,6 +133,7 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
           break;
         case 'audio':
           if (phaseRef.current !== 'speaking') {
+            clearResumeTimer(); // a new reply started; cancel any pending resume
             captureRef.current?.pause(); // half-duplex
             setPhase('speaking');
           }
@@ -131,13 +142,23 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
         case 'tool_call':
           void runToolCalls(event.calls);
           break;
-        case 'turn_complete':
+        case 'turn_complete': {
           inputBufRef.current = '';
           outputBufRef.current = '';
-          captureRef.current?.resume();
-          setPhase('listening');
+          // Resume the mic only AFTER the reply finishes playing — otherwise the
+          // mic captures the assistant's own voice and triggers spurious turns
+          // (e.g. it keeps advancing steps with no user input).
+          clearResumeTimer();
+          const drain = (playbackRef.current?.drainDelayMs() ?? 0) + 250;
+          resumeTimerRef.current = setTimeout(() => {
+            resumeTimerRef.current = null;
+            captureRef.current?.resume();
+            if (phaseRef.current === 'speaking') setPhase('listening');
+          }, drain);
           break;
+        }
         case 'interrupted':
+          clearResumeTimer();
           playbackRef.current?.stop();
           captureRef.current?.resume();
           setPhase('listening');
@@ -149,7 +170,7 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
           break;
       }
     },
-    [endSession, runToolCalls, setPhase],
+    [clearResumeTimer, endSession, runToolCalls, setPhase],
   );
 
   /** Pre-grant mic permission + configure the audio session. */

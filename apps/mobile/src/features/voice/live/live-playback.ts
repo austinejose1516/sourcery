@@ -32,6 +32,8 @@ export interface LivePlayback {
   enqueue: (base64: string, mimeType: string) => void;
   stop: () => void;
   destroy: () => void;
+  /** Milliseconds of audio still queued to play (so the mic can wait it out). */
+  drainDelayMs: () => number;
 }
 
 export function createLivePlayback(): LivePlayback {
@@ -73,6 +75,7 @@ export function createLivePlayback(): LivePlayback {
         sources.delete(source);
       };
     },
+    drainDelayMs: () => (ctx ? Math.max(0, (playhead - ctx.currentTime) * 1000) : 0),
     stop: () => {
       for (const source of sources) {
         try {
