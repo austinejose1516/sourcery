@@ -13,11 +13,12 @@ type AudioCtx = InstanceType<typeof import('react-native-audio-api').AudioContex
  * butt up against each other without clicks. `stop()` cancels everything
  * scheduled — used for barge-in / interruption.
  *
- * The context is created AT the source rate (24 kHz) so playback isn't sped up /
- * pitched up — react-native-audio-api plays an AudioBuffer at the context rate
- * without resampling, so a 24 kHz buffer in a 48 kHz context would play ~2× fast
- * and an octave high. If the device refuses the requested rate we resample the
- * samples to the context's actual rate as a safety net.
+ * react-native-audio-api plays an AudioBuffer at the context's rate WITHOUT
+ * resampling, so a 24 kHz buffer in the device's native 48 kHz context plays ~2×
+ * fast and an octave high. We use the device's native context rate and resample
+ * the incoming 24 kHz audio up to it, so the buffer rate matches the context and
+ * it plays at the correct speed/pitch. (Forcing a 24 kHz context produces broken
+ * audio on-device, so we don't.)
  */
 
 const DEFAULT_RATE = 24000;
@@ -38,9 +39,9 @@ export function createLivePlayback(): LivePlayback {
   let playhead = 0;
   const sources = new Set<ReturnType<AudioCtx['createBufferSource']>>();
 
-  const ensureCtx = (sampleRate: number) => {
+  const ensureCtx = () => {
     if (!ctx) {
-      ctx = new (rnAudio().AudioContext)({ sampleRate });
+      ctx = new (rnAudio().AudioContext)(); // device-native rate (e.g. 48 kHz)
       playhead = ctx.currentTime;
     }
     return ctx;
@@ -52,9 +53,9 @@ export function createLivePlayback(): LivePlayback {
       let floats = pcm16ToFloat32(base64ToBytes(base64));
       if (floats.length === 0) return;
 
-      const c = ensureCtx(srcRate);
-      // Match the buffer's rate to the context's actual rate so it plays at the
-      // right speed/pitch (resample only if the device didn't honor srcRate).
+      const c = ensureCtx();
+      // Resample to the context's native rate so the buffer plays at the correct
+      // speed/pitch (react-native-audio-api doesn't resample buffers itself).
       if (srcRate !== c.sampleRate) floats = resampleFloat32(floats, srcRate, c.sampleRate);
       const buffer = c.createBuffer(1, floats.length, c.sampleRate);
       buffer.getChannelData(0).set(floats);
