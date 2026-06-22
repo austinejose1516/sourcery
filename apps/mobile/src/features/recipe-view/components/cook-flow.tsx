@@ -23,7 +23,7 @@ export function CookFlow({ recipe, onExit }: CookFlowProps) {
   // Bumped by the "play the video" voice command to start the current step's clip.
   const [videoPlayNonce, setVideoPlayNonce] = useState(0);
   const assistant = useAssistant();
-  const { status } = useVoiceSession();
+  const { status, error: voiceError } = useVoiceSession();
   const markTried = useMarkTried(recipe.id);
 
   const steps = recipe.steps;
@@ -171,6 +171,7 @@ export function CookFlow({ recipe, onExit }: CookFlowProps) {
         total={steps.length}
         hasVideo={recipe.videoKind != null}
         voiceStatus={status}
+        voiceError={voiceError}
         videoPlaySignal={videoPlayNonce}
         onPrev={prev}
         onNext={next}

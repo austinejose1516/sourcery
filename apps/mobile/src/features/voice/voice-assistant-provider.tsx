@@ -181,9 +181,10 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
       const wake = await createWakeWord(
         () => startSessionRef.current(),
         (err) => {
-          const store = useVoiceStore.getState();
-          store.setError(err.message);
-          store.setStatus('error');
+          // The wake word is a best-effort, background hands-free trigger. Its
+          // failures must NOT surface as the assistant's error or block the
+          // tap-to-talk path — tapping the mic always works regardless.
+          if (__DEV__) console.warn('[voice] wake word:', err.message);
         },
       );
       wakeRef.current = wake;
@@ -213,7 +214,8 @@ export function VoiceAssistantProvider({ children }: { children: ReactNode }) {
     useVoiceStore.getState().setReply(null);
 
     try {
-      await wakeRef.current?.stop(); // release the mic for the recorder
+      await wakeRef.current?.stop(); // release the mic from the wake word
+      configureVoiceSession(); // re-assert play-and-record after the handoff
       const live = createLiveClient(handleEvent);
       liveRef.current = live;
       await live.connect();

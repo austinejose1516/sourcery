@@ -48,6 +48,8 @@ export interface CookStepProps {
   hasVideo: boolean;
   /** Live assistant state, so the chip/mic can reflect listening vs. idle. */
   voiceStatus: VoiceStatus;
+  /** The last error message, shown in the chip when something fails. */
+  voiceError?: string | null;
   /** Bumped by the "play the video" voice command to start the step's clip. */
   videoPlaySignal: number;
   onPrev: () => void;
@@ -97,7 +99,7 @@ function VoiceMicButton({ status, onPress }: { status: VoiceStatus; onPress: () 
 }
 
 /** A single dark, large-text cook step with its ingredients, video, timer and cues. */
-export function CookStep({ recipeId, step, index, total, hasVideo, voiceStatus, videoPlaySignal, onPrev, onNext, onExit, onVoice }: CookStepProps) {
+export function CookStep({ recipeId, step, index, total, hasVideo, voiceStatus, voiceError, videoPlaySignal, onPrev, onNext, onExit, onVoice }: CookStepProps) {
   const isFirst = index === 0;
   const isLast = index === total - 1;
   const canWatch = hasVideo && step.clip != null;
@@ -157,7 +159,9 @@ export function CookStep({ recipeId, step, index, total, hasVideo, voiceStatus, 
       <View style={styles.listeningWrap}>
         <PressableScale accessibilityRole="button" accessibilityLabel="Voice control" onPress={onVoice} style={styles.listening}>
           <View style={[styles.listeningDot, { backgroundColor: voiceOn ? voice.color : cookColors.fgMuted }]} />
-          <Text style={styles.listeningText}>{voice.label}</Text>
+          <Text style={styles.listeningText} numberOfLines={1}>
+            {voiceStatus === 'error' && voiceError ? voiceError : voice.label}
+          </Text>
         </PressableScale>
       </View>
 
@@ -260,7 +264,7 @@ const styles = StyleSheet.create({
   listeningWrap: { alignItems: 'center', paddingBottom: spacing.sm },
   listening: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 7, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: cookColors.chip },
   listeningDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: cookColors.success },
-  listeningText: { fontFamily: fontFamily.bodyMedium, fontSize: 12, color: cookColors.fg },
+  listeningText: { fontFamily: fontFamily.bodyMedium, fontSize: 12, color: cookColors.fg, maxWidth: 280 },
 
   nav: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl },
   prevBtn: { width: 58, height: 58, borderRadius: radius.pill, backgroundColor: cookColors.chip, alignItems: 'center', justifyContent: 'center' },
