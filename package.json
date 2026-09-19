@@ -10,28 +10,14 @@
   "scripts": {
     "api": "pnpm --filter api dev",
     "api:start": "pnpm --filter api start",
-    "mobile": "pnpm --filter mobile start",
-    "mobile:web": "pnpm --filter mobile run web",
-    "ios": "pnpm --filter mobile exec expo run:ios --device",
-    "ios:release": "pnpm --filter mobile exec expo run:ios --device --configuration Release",
-    "ios:sim": "pnpm --filter mobile exec expo run:ios",
+    "ios": "xcodebuild -project apps/ios/ReciPeer.xcodeproj -scheme ReciPeer -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17' build",
+    "ios:release": "xcodebuild -project apps/ios/ReciPeer.xcodeproj -scheme ReciPeer -configuration Release -destination 'generic/platform=iOS' build",
+    "ios:project": "open apps/ios/ReciPeer.xcodeproj",
     "trigger:dev": "pnpm --filter api run trigger:dev",
     "trigger:deploy": "pnpm --filter api run trigger:deploy",
     "typecheck": "pnpm -r run typecheck"
   },
-  "pnpm": {
-    "overrides": {
-      "react": "19.2.3",
-      "react-dom": "19.2.3",
-      "react-native": "0.85.3"
-    }
-  },
   "devDependencies": {
     "typescript": "~6.0.3"
-  },
-  "dependencies": {
-    "expo": "~56.0.6",
-    "react": "19.2.3",
-    "react-native": "0.85.3"
   }
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ALLERGENS } from '../nutrition/types';
 
 /**
  * The load-bearing contract (Technical Spec §7): the single JSON shape Gemini
@@ -31,6 +32,21 @@ export const recipeConfidenceSchema = z.object({
   notes: z.string(),
 });
 
+/**
+ * Per-serving nutrition estimate. Every metric is nullable so the model can omit
+ * anything it can't reasonably infer from the video rather than inventing a figure.
+ */
+export const nutritionPerServingSchema = z.object({
+  calories: z.number().nullable(),
+  protein_g: z.number().nullable(),
+  carbs_g: z.number().nullable(),
+  fat_g: z.number().nullable(),
+  fiber_g: z.number().nullable(),
+  sugar_g: z.number().nullable(),
+  sat_fat_g: z.number().nullable(),
+  sodium_mg: z.number().nullable(),
+});
+
 export const recipeExtractionSchema = z.object({
   title: z.object({
     original: z.string(),
@@ -44,6 +60,10 @@ export const recipeExtractionSchema = z.object({
   cultural_notes: z.string(),
   ingredients: z.array(recipeIngredientSchema),
   steps: z.array(recipeStepSchema),
+  // Nutrition + allergens are best-effort estimates; older/failed extractions omit
+  // them entirely, so both tolerate absence (null / empty array).
+  nutrition_per_serving: nutritionPerServingSchema.nullish(),
+  contains_allergens: z.array(z.enum(ALLERGENS)).optional().default([]),
   confidence: recipeConfidenceSchema,
 });
 

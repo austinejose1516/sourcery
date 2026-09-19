@@ -1,7 +1,7 @@
 /**
  * Explore DTOs — the wire contract for the Explore tab (Recipes / Cooks /
  * Collections + holistic search) between the API (apps/api) and the mobile app
- * (apps/mobile). Reuses the feed DTOs so recipe/author/region shapes never drift.
+ * (apps/ios). Reuses the feed DTOs so recipe/author/region shapes never drift.
  */
 
 import type { FeedRegionDTO, RecipeCardDTO } from '../feed/types';

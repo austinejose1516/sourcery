@@ -1,6 +1,6 @@
 /**
  * DTOs for the consumer-facing Recipe Viewer + Cook mode — the wire contract
- * between apps/api and apps/mobile. Richer than RecipeDetailDTO (which serves the
+ * between apps/api and apps/ios. Richer than RecipeDetailDTO (which serves the
  * editor): carries the contributor, region/cuisine/dietary, social counts,
  * viewer-relative flags, and the per-step data cook mode renders.
  *
@@ -8,6 +8,8 @@
  * by the AI pipeline, which doesn't yet emit them) degrade gracefully — the UI
  * simply omits the corresponding block.
  */
+
+import type { Allergen, RecipeNutritionDTO } from '../nutrition/types';
 
 export type CautionLevelDTO = 'CAUTION' | 'WARN' | 'CRITICAL';
 export type DifficultyDTO = 'EASY' | 'MEDIUM' | 'HARD';
@@ -84,6 +86,10 @@ export interface RecipeViewDTO {
   cuisine: ViewCuisineDTO | null;
   difficulty: DifficultyDTO | null;
   dietaryTags: string[];
+  /** Per-serving nutrition facts, or null when the recipe has none yet. */
+  nutrition: RecipeNutritionDTO | null;
+  /** Major allergens the recipe contains; empty = unknown, not "allergen-free". */
+  containsAllergens: Allergen[];
   totalTimeMinutes: number | null;
   /** Active "hands-on" time (= prepTimeMinutes); null when unknown. */
   handsOnMinutes: number | null;

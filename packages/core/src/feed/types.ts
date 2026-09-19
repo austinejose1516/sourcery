@@ -1,6 +1,6 @@
 /**
  * Feed DTOs — the wire contract between the API (apps/api) and the mobile app
- * (apps/mobile). Both sides import these so the shapes can never drift.
+ * (apps/ios). Both sides import these so the shapes can never drift.
  *
  * These are deliberately flatter than the Prisma models: they carry exactly what
  * the Home-feed and Cold-start screens render, with viewer-relative flags

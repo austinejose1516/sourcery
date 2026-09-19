@@ -1,6 +1,6 @@
 /**
  * DTOs for the "My Recipes → Mine" tab and the Review & publish screen — the
- * wire contract between apps/api and apps/mobile. Grouped by the state the UI
+ * wire contract between apps/api and apps/ios. Grouped by the state the UI
  * renders: Processing (active jobs) → Needs review (DRAFT) → Published → Private.
  */
 
