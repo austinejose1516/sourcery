@@ -1,0 +1,4 @@
+// Release — talk to the deployed Cloudflare Workers API.
+#include "Base.xcconfig"
+
+API_URL = https:/$()/recipeer-api.austinejose1516.workers.dev

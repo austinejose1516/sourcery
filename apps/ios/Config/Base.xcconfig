@@ -1,0 +1,10 @@
+// Base configuration shared by Debug + Release.
+// These values are compiled into Info.plist via the build settings.
+
+// Bundle identity
+PRODUCT_BUNDLE_IDENTIFIER = com.austinejose.recipeer
+PRODUCT_NAME = ReciPeer
+
+// Supabase (client-safe publishable credentials — same as apps/api/.env (shared Supabase project))
+SUPABASE_URL = https:/$()/nmxizortfcdaoxeuufzz.supabase.co
+SUPABASE_ANON_KEY = sb_publishable_ElfBVwYsypU82RTu56Slkg_vDQIcdCw

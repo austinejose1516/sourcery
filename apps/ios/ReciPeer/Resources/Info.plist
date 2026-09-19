@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>ReciPeer</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.0.1</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>SplashBackground</string>
+	</dict>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Fraunces_500Medium.ttf</string>
+		<string>Fraunces_600SemiBold.ttf</string>
+		<string>Inter_400Regular.ttf</string>
+		<string>Inter_500Medium.ttf</string>
+		<string>Inter_600SemiBold.ttf</string>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>recipeer</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Sourcery connects to your local development API server over Wi-Fi.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Sourcery uses your microphone for hands-free voice control while you cook.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Sourcery uses speech recognition to understand your voice commands and questions.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Sourcery needs access to your videos so you can turn a cooking clip into a recipe.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+	<key>SupabaseURL</key>
+	<string>$(SUPABASE_URL)</string>
+	<key>SupabaseAnonKey</key>
+	<string>$(SUPABASE_ANON_KEY)</string>
+	<key>APIBaseURL</key>
+	<string>$(API_URL)</string>
+</dict>
+</plist>
