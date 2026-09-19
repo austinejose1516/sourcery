@@ -10,15 +10,27 @@ import { env } from '../env';
  */
 // env.SUPABASE_URL is optional at the schema level (so the trigger.dev task
 // indexer can import env without it); the API server genuinely needs it, so
-// assert its presence here, at the one place it's used.
-if (!env.SUPABASE_URL) {
-  throw new Error('SUPABASE_URL is required to verify auth tokens (set it in the API environment).');
+// assert its presence here, at the one place it's used. Built lazily, not at
+// module scope: on Cloudflare Workers the env is injected per-request
+// (src/worker.ts), so a module-scope read would throw at import time, before
+// the first request ever arrives.
+let jwksCache: { url: string; jwks: ReturnType<typeof createRemoteJWKSet>; issuer: string } | null =
+  null;
+
+function authConfig() {
+  if (!env.SUPABASE_URL) {
+    throw new Error('SUPABASE_URL is required to verify auth tokens (set it in the API environment).');
+  }
+  const url = env.SUPABASE_URL;
+  if (!jwksCache || jwksCache.url !== url) {
+    jwksCache = {
+      url,
+      jwks: createRemoteJWKSet(new URL(`${url}/auth/v1/.well-known/jwks.json`)),
+      issuer: `${url}/auth/v1`,
+    };
+  }
+  return jwksCache;
 }
-const SUPABASE_URL = env.SUPABASE_URL;
-
-const JWKS = createRemoteJWKSet(new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`));
-
-const ISSUER = `${SUPABASE_URL}/auth/v1`;
 
 /** Hono context variables set by `requireAuth`. */
 export type AuthVariables = { viewerId: string };
@@ -33,8 +45,9 @@ export type AuthVariables = { viewerId: string };
 export async function verifySupabaseJwt(token: string | undefined | null): Promise<string | null> {
   if (!token) return null;
   try {
-    const { payload } = await jwtVerify(token, JWKS, {
-      issuer: ISSUER,
+    const { jwks, issuer } = authConfig();
+    const { payload } = await jwtVerify(token, jwks, {
+      issuer,
       audience: 'authenticated',
     });
     return typeof payload.sub === 'string' ? payload.sub : null;

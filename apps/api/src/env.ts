@@ -4,13 +4,20 @@ import { config } from 'dotenv';
 import { z } from 'zod';
 
 /**
- * Server-side env. Loaded from the repo-root .env (where the Cloudflare /
- * OpenRouter creds already live), with an optional apps/api/.env override.
+ * Server-side env. On Node it is loaded from the repo-root .env (where the
+ * Cloudflare / OpenRouter creds already live), with an optional apps/api/.env
+ * override. On Cloudflare Workers there is no filesystem — the entrypoint
+ * (src/worker.ts) injects the per-request bindings via setEnv().
  * These secrets are NEVER bundled into the mobile app (only EXPO_PUBLIC_* is).
  */
-const here = dirname(fileURLToPath(import.meta.url));
-config({ path: resolve(here, '../../../.env') }); // <repo>/.env
-config({ path: resolve(here, '../.env'), override: true }); // apps/api/.env (optional)
+const isWorkers =
+  typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers';
+
+if (!isWorkers) {
+  const here = dirname(fileURLToPath(import.meta.url));
+  config({ path: resolve(here, '../../../.env') }); // <repo>/.env
+  config({ path: resolve(here, '../.env'), override: true }); // apps/api/.env (optional)
+}
 
 const schema = z.object({
   // R2 / Cloudflare (names mirror what's already in root .env). Optional here so
@@ -53,6 +60,22 @@ const schema = z.object({
     .url('SUPABASE_URL must be the Supabase project URL, e.g. https://xxx.supabase.co')
     .optional(),
 
+  // YouTube channel import (POST /youtube/*). The OAuth client is a Google Cloud
+  // "Web application" client — the code exchange happens here, server-side, so the
+  // secret never reaches the device. Optional so the trigger.dev task indexer and
+  // the extraction worker (neither of which talks to YouTube) can boot without it;
+  // requireYouTubeEnv() asserts them where the routes actually use them.
+  WEB_CLIENT_ID: z.string().optional(),
+  WEB_CLIENT_SECRET: z.string().optional(),
+  // 32 bytes, base64 — the AES-256-GCM key for refresh tokens at rest. Rotating
+  // this makes every stored token undecryptable and forces users to reconnect.
+  YOUTUBE_TOKEN_ENC_KEY: z.string().optional(),
+  // Must match an Authorized redirect URI on the OAuth client, character for
+  // character, or Google fails the flow with redirect_uri_mismatch.
+  GOOGLE_OAUTH_REDIRECT_URI: z.string().url().default('http://localhost:8787/youtube/oauth/callback'),
+  // Where the OAuth callback sends the user back into the app.
+  YOUTUBE_OAUTH_APP_RETURN_URL: z.string().default('recipeer://youtube-connected'),
+
   // trigger.dev — background processing. When TRIGGER_SECRET_KEY is absent the
   // API runs extraction inline (fire-and-forget) so dev works with no setup.
   TRIGGER_SECRET_KEY: z.string().optional(),
@@ -62,8 +85,8 @@ const schema = z.object({
   R2_PRESIGN_EXPIRES: z.coerce.number().default(600),
 });
 
-function loadEnv() {
-  const parsed = schema.safeParse(process.env);
+function loadEnv(source: Record<string, string | undefined> = process.env) {
+  const parsed = schema.safeParse(source);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  • ${i.message}`).join('\n');
     throw new Error(`Invalid API environment configuration:\n${issues}`);
@@ -74,8 +97,19 @@ function loadEnv() {
   };
 }
 
-export const env = loadEnv();
+// `let` (not `const`): the Workers entrypoint swaps this per-request via
+// setEnv(). ESM live bindings mean every importer sees the replacement.
+export let env = loadEnv();
 export type Env = typeof env;
+
+/**
+ * Cloudflare Workers: replaces the module-level env with the Worker's bindings
+ * (vars + secrets + non-string bindings, which zod strips). Called by the init
+ * middleware in src/worker.ts before any route handler runs.
+ */
+export function setEnv(raw: Record<string, string | undefined>) {
+  env = loadEnv(raw);
+}
 
 /**
  * Asserts the R2 credentials are present and returns them non-optional, with a
@@ -100,5 +134,35 @@ export function requireR2Env() {
     // Endpoint derived from the account id so a bucket-suffixed "S3 API" value
     // pasted from the dashboard can't double up the bucket.
     endpoint: `https://${env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  };
+}
+
+/**
+ * Asserts the YouTube OAuth credentials are present and the encryption key is a
+ * usable AES-256 key. Called from the /youtube routes so the rest of the API (and
+ * the trigger.dev worker) runs fine without them.
+ */
+export function requireYouTubeEnv() {
+  const missing: string[] = [];
+  if (!env.WEB_CLIENT_ID) missing.push('WEB_CLIENT_ID (Google OAuth "Web application" client id)');
+  if (!env.WEB_CLIENT_SECRET) missing.push('WEB_CLIENT_SECRET (same OAuth client)');
+  if (!env.YOUTUBE_TOKEN_ENC_KEY) missing.push('YOUTUBE_TOKEN_ENC_KEY (openssl rand -base64 32)');
+  if (missing.length > 0) {
+    throw new Error(`Missing YouTube configuration in .env:\n${missing.map((m) => `  • ${m}`).join('\n')}`);
+  }
+
+  const encKey = Buffer.from(env.YOUTUBE_TOKEN_ENC_KEY as string, 'base64');
+  if (encKey.length !== 32) {
+    throw new Error(
+      `YOUTUBE_TOKEN_ENC_KEY must decode to 32 bytes for AES-256 (got ${encKey.length}). Regenerate with: openssl rand -base64 32`,
+    );
+  }
+
+  return {
+    clientId: env.WEB_CLIENT_ID as string,
+    clientSecret: env.WEB_CLIENT_SECRET as string,
+    redirectUri: env.GOOGLE_OAUTH_REDIRECT_URI,
+    appReturnUrl: env.YOUTUBE_OAUTH_APP_RETURN_URL,
+    encKey,
   };
 }

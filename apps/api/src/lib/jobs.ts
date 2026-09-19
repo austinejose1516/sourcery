@@ -10,7 +10,10 @@ import { type ExtractionPayload, runExtraction } from './extract-job';
 export async function enqueueExtraction(payload: ExtractionPayload): Promise<void> {
   if (env.TRIGGER_SECRET_KEY) {
     const { extractRecipe } = await import('../trigger/extract-recipe');
-    await extractRecipe.trigger(payload);
+    // concurrencyKey scopes the task's concurrencyLimit per user, so someone
+    // importing five videos at once queues behind themselves rather than
+    // starving everyone else's extractions.
+    await extractRecipe.trigger(payload, payload.userId ? { concurrencyKey: payload.userId } : undefined);
     return;
   }
   console.warn('[jobs] TRIGGER_SECRET_KEY not set — running extraction inline.');

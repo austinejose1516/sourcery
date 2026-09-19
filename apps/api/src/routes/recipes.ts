@@ -123,7 +123,7 @@ export const recipes = new Hono()
       data: { userId: viewerId, sourceType: 'VIDEO', sourceUrl: parsed.data.key, status: 'UPLOADING' },
       select: { id: true },
     });
-    await enqueueExtraction({ jobId: job.id, key: parsed.data.key });
+    await enqueueExtraction({ jobId: job.id, userId: viewerId, key: parsed.data.key });
     return c.json({ jobId: job.id });
   })
 
@@ -168,7 +168,7 @@ export const recipes = new Hono()
       data: { userId: viewerId, sourceType: 'LINK', sourceUrl: parsed.data.url, status: 'UPLOADING' },
       select: { id: true },
     });
-    await enqueueExtraction({ jobId: job.id, url: parsed.data.url, importedVideoId: imported.id });
+    await enqueueExtraction({ jobId: job.id, userId: viewerId, url: parsed.data.url, importedVideoId: imported.id });
     return c.json({ jobId: job.id, deduped: false });
   })
 
@@ -327,6 +327,7 @@ export const recipes = new Hono()
         region: { include: { parentRegion: { select: { name: true } } } },
         cuisine: { select: { name: true } },
         dietaryTags: { include: { dietaryTag: { select: { name: true } } } },
+        nutrition: true,
         author: { include: { region: { include: { parentRegion: { select: { name: true } } } } } },
         ingredients: { orderBy: { orderIndex: 'asc' } },
         steps: {
@@ -363,6 +364,20 @@ export const recipes = new Hono()
       cuisine: r.cuisine ? { name: r.cuisine.name } : null,
       difficulty: r.difficulty as RecipeViewDTO['difficulty'],
       dietaryTags: r.dietaryTags.map((t) => t.dietaryTag.name),
+      nutrition: r.nutrition
+        ? {
+            calories: r.nutrition.calories,
+            proteinG: r.nutrition.proteinG,
+            carbsG: r.nutrition.carbsG,
+            fatG: r.nutrition.fatG,
+            fiberG: r.nutrition.fiberG,
+            sugarG: r.nutrition.sugarG,
+            satFatG: r.nutrition.satFatG,
+            sodiumMg: r.nutrition.sodiumMg,
+            source: r.nutrition.source,
+          }
+        : null,
+      containsAllergens: r.containsAllergens,
       totalTimeMinutes: r.totalTimeMinutes,
       handsOnMinutes: r.prepTimeMinutes,
       baseServings: r.baseServings,
@@ -561,11 +576,14 @@ export const recipes = new Hono()
 
     const r = await prisma.recipe.findUnique({
       where: { id },
-      select: { authorId: true, publishedAt: true, ingestionJob: { select: { sourceType: true } } },
+      select: { authorId: true, publishedAt: true, ingestionJob: { select: { sourceType: true, sourceOwned: true } } },
     });
     if (!r) return c.json({ error: 'Recipe not found' }, 404);
     if (r.authorId !== viewerId) return c.json({ error: 'Not your recipe' }, 403);
-    if (parsed.data.visibility === 'PUBLIC' && r.ingestionJob?.sourceType === 'LINK') {
+    // Someone else's video stays a private document. A creator's own uploads,
+    // proven by their YouTube OAuth grant, are theirs to publish.
+    const job = r.ingestionJob;
+    if (parsed.data.visibility === 'PUBLIC' && job?.sourceType === 'LINK' && !job.sourceOwned) {
       return c.json({ error: 'Imported videos can only be saved privately.' }, 400);
     }
 

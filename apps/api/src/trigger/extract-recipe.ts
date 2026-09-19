@@ -14,6 +14,10 @@ export const extractRecipe = task({
   // the R2 download straight into the resumable upload to bound memory.)
   machine: 'large-1x',
   maxDuration: 600,
+  // Paired with a per-user `concurrencyKey` at trigger time (lib/jobs.ts), this
+  // caps each user at two extractions in flight. A five-video channel import
+  // drains two at a time instead of claiming five 8GB machines at once.
+  queue: { concurrencyLimit: 2 },
   run: async (payload: ExtractionPayload) => {
     await runExtraction(payload);
   },

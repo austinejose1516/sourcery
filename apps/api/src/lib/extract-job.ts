@@ -1,3 +1,4 @@
+import type { RecipeStatus, RecipeVisibility } from '@prisma/client';
 import { getExtractor } from './extractor';
 import { persistExtraction } from './persist-recipe';
 import { prisma } from './prisma';
@@ -5,6 +6,8 @@ import { mediaStore } from './r2';
 
 export interface ExtractionPayload {
   jobId: string;
+  /** Owner of the job — used as the trigger.dev concurrency key. */
+  userId?: string;
   /** R2 object key (gallery uploads). */
   key?: string;
   /** External video URL (link imports). */
@@ -21,6 +24,21 @@ export interface ExtractionPayload {
  * Uploads → a DRAFT recipe (Needs review). Links → a PUBLISHED + PRIVATE recipe
  * (a private document; never publishable publicly).
  */
+/**
+ * Where a finished extraction lands, by provenance:
+ *
+ *  - gallery upload      → DRAFT, PUBLIC   — theirs; review, then it's already public
+ *  - link they own       → DRAFT, PRIVATE  — theirs; review, then they choose to publish
+ *  - link they don't own → PUBLISHED, PRIVATE — a private document, never publishable
+ *
+ * Ownership of a link is established by a YouTube OAuth grant; see routes/youtube.ts.
+ */
+function destinationFor(isLink: boolean, sourceOwned: boolean): { status: RecipeStatus; visibility: RecipeVisibility } {
+  if (!isLink) return { status: 'DRAFT', visibility: 'PUBLIC' };
+  if (sourceOwned) return { status: 'DRAFT', visibility: 'PRIVATE' };
+  return { status: 'PUBLISHED', visibility: 'PRIVATE' };
+}
+
 export async function runExtraction(payload: ExtractionPayload): Promise<void> {
   const { jobId, key, url, importedVideoId } = payload;
   try {
@@ -43,8 +61,7 @@ export async function runExtraction(payload: ExtractionPayload): Promise<void> {
       extraction,
       sourceType: job.sourceType,
       originalVideoUrl: isLink ? url ?? job.sourceUrl : key ?? null,
-      status: isLink ? 'PUBLISHED' : 'DRAFT',
-      visibility: isLink ? 'PRIVATE' : 'PUBLIC',
+      ...destinationFor(isLink, job.sourceOwned),
     });
 
     if (importedVideoId) {

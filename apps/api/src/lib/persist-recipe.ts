@@ -53,6 +53,25 @@ export async function persistExtraction({
 
   const orderedSteps = [...extraction.steps].sort((a, b) => a.index - b.index);
 
+  // Nutrition + allergens are best-effort estimates from the extractor; both are
+  // optional, so persist a row only when the model actually returned figures.
+  const n = extraction.nutrition_per_serving;
+  const nutritionCreate = n
+    ? {
+        create: {
+          calories: n.calories != null ? Math.round(n.calories) : null,
+          proteinG: n.protein_g,
+          carbsG: n.carbs_g,
+          fatG: n.fat_g,
+          fiberG: n.fiber_g,
+          sugarG: n.sugar_g,
+          satFatG: n.sat_fat_g,
+          sodiumMg: n.sodium_mg,
+          source: 'AI_ESTIMATED' as const,
+        },
+      }
+    : undefined;
+
   const recipe = await prisma.recipe.create({
     data: {
       authorId,
@@ -66,6 +85,8 @@ export async function persistExtraction({
       baseServings: extraction.servings ?? 4,
       cuisineId,
       originalVideoUrl,
+      containsAllergens: extraction.contains_allergens,
+      nutrition: nutritionCreate,
       publishedAt: status === 'PUBLISHED' ? new Date() : null,
       ingredients: {
         create: extraction.ingredients.map((ing, i) => {

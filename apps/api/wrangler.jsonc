@@ -1,0 +1,26 @@
+// Cloudflare Workers config — https://developers.cloudflare.com/workers/wrangler/configuration/
+//
+// Secrets are NOT in this file. Set them with `wrangler secret put <KEY>` for
+// production; for local `wrangler dev` they live in .dev.vars (gitignored).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "recipeer-api",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-09-01",
+  // node:crypto (AES-256-GCM YouTube token encryption), Buffer, the AWS SDK
+  // (R2 presigning), and pg (via @prisma/adapter-pg) all need Node compat.
+  "compatibility_flags": ["nodejs_compat"],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE_DB",
+      // Created by `wrangler hyperdrive create recipeer-db` (points at Supabase Postgres).
+      "id": "fdc8c3ba42dd41de88995741daddfded"
+    }
+  ],
+  "observability": { "enabled": true },
+  "vars": {
+    // Must match an Authorized Redirect URI on the Google OAuth client,
+    // character for character, or Google fails the flow with redirect_uri_mismatch.
+    "GOOGLE_OAUTH_REDIRECT_URI": "https://recipeer-api.austinejose1516.workers.dev/youtube/oauth/callback"
+  }
+}

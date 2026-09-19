@@ -10,4 +10,5 @@ android/
 .env
 .env.*
 !.env.example
+.dev.vars
 *.tsbuildinfo

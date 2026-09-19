@@ -18,7 +18,11 @@
 // ============================================================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // Lets the client be constructed with a driver adapter (src/worker.ts uses
+  // PrismaPg + Hyperdrive on Cloudflare Workers). Node entrypoints still
+  // construct it without an adapter and use the engine as before.
+  previewFeatures = ["driverAdapters"]
   // "native" covers local dev (darwin-arm64); "debian-openssl-3.0.x" is the
   // runtime on trigger.dev's Linux workers — both engines must be generated so
   // the deployed extract-recipe task can load the Query Engine.
@@ -26,8 +30,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("SUPABASE_DIRECT_URL")
+  provider = "postgresql"
+  url      = env("SUPABASE_DIRECT_URL")
 }
 
 // ============================================================================
@@ -37,35 +41,50 @@ datasource db {
 // Created via a Supabase trigger or on first app open after signup.
 
 model User {
-  id                String             @id @db.Uuid // matches auth.users.id
-  username          String             @unique
+  id                String            @id @db.Uuid // matches auth.users.id
+  username          String            @unique
   displayName       String
   bio               String?
-  avatarUrl         String?            // Cloudflare R2 path
-  regionId          String?            @db.Uuid
-  country           String?            // ISO country code, e.g. "IE", "IN"
-  languages         String[]           // ISO language codes, e.g. ["en", "ml"]
-  cookingExperience CookingExperience  @default(BEGINNER)
-  unitPreference    UnitPreference     @default(METRIC)
-  spiceTolerance    SpiceTolerance     @default(MEDIUM)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  avatarUrl         String? // Cloudflare R2 path
+  regionId          String?           @db.Uuid
+  country           String? // ISO country code, e.g. "IE", "IN"
+  languages         String[] // ISO language codes, e.g. ["en", "ml"]
+  cookingExperience CookingExperience @default(BEGINNER)
+  unitPreference    UnitPreference    @default(METRIC)
+  spiceTolerance    SpiceTolerance    @default(MEDIUM)
+
+  // Health/body model — captured in the (skippable) onboarding health step.
+  // All nullable so users who skip, and rows created before this feature,
+  // degrade gracefully: the recipe personalization simply doesn't render.
+  // Height/weight are always stored metric; the UI converts per unitPreference.
+  sex           BiologicalSex? // required by the Mifflin-St Jeor BMR formula
+  dateOfBirth   DateTime?      @db.Date // store DOB; derive age so it never drifts
+  heightCm      Float?
+  weightKg      Float?
+  activityLevel ActivityLevel? // TDEE multiplier; null until answered
+  dietGoal      DietGoal? // shifts the daily calorie target
+  allergens     Allergen[] // the viewer's food allergies (big-9); drives conflict check
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  region            Region?            @relation(fields: [regionId], references: [id])
-  recipes           Recipe[]
-  cuisineInterests  UserCuisineInterest[]
-  followers         Follow[]           @relation("Following") // people who follow this user
-  following         Follow[]           @relation("Follower")  // people this user follows
-  savedRecipes      RecipeSave[]
-  triedPosts        TriedThis[]
-  postLikes         PostLike[]
-  postComments      PostComment[]
-  endorsements      RecipeEndorsement[]
-  shoppingList      ShoppingList?
-  cookingSessions   CookingSession[]
-  ingestionJobs     IngestionJob[]
-  collections       Collection[]
+  region           Region?               @relation(fields: [regionId], references: [id])
+  recipes          Recipe[]
+  cuisineInterests UserCuisineInterest[]
+  dietaryPrefs     UserDietaryTag[]
+  followers        Follow[]              @relation("Following") // people who follow this user
+  following        Follow[]              @relation("Follower") // people this user follows
+  savedRecipes     RecipeSave[]
+  triedPosts       TriedThis[]
+  postLikes        PostLike[]
+  postComments     PostComment[]
+  endorsements     RecipeEndorsement[]
+  shoppingList     ShoppingList?
+  cookingSessions  CookingSession[]
+  ingestionJobs    IngestionJob[]
+  collections      Collection[]
+  youtube          YouTubeConnection?
 
   @@map("users")
 }
@@ -87,6 +106,51 @@ enum SpiceTolerance {
   HIGH
 }
 
+// Biological sex — needed for the Mifflin-St Jeor BMR equation (the constant
+// differs by +5 for male / −161 for female). Not a gender-identity field.
+enum BiologicalSex {
+  MALE
+  FEMALE
+}
+
+// Physical activity level → the TDEE multiplier applied to BMR.
+enum ActivityLevel {
+  SEDENTARY // little/no exercise         ×1.2
+  LIGHT // 1–3 days/week              ×1.375
+  MODERATE // 3–5 days/week              ×1.55
+  ACTIVE // 6–7 days/week              ×1.725
+  VERY_ACTIVE // hard daily / physical job  ×1.9
+}
+
+// The viewer's calorie goal — shifts the daily target off maintenance (TDEE).
+enum DietGoal {
+  LOSE // ~−15%
+  MAINTAIN
+  GAIN // ~+15%
+}
+
+// The FDA/EU "big-9" major food allergens. Used both as the viewer's declared
+// allergies (User.allergens) and the recipe's "contains" list (Recipe.containsAllergens)
+// so the conflict check is a simple array intersection. Nut-free = PEANUTS + TREE_NUTS.
+enum Allergen {
+  PEANUTS
+  TREE_NUTS
+  MILK
+  EGG
+  WHEAT_GLUTEN
+  SOY
+  FISH
+  SHELLFISH
+  SESAME
+}
+
+// Provenance of a recipe's nutrition figures, so the UI can label estimates.
+enum NutritionSource {
+  AI_ESTIMATED
+  MANUAL
+  COMPUTED
+}
+
 // ============================================================================
 // CORE: Recipe + Steps + Ingredients
 // ============================================================================
@@ -95,75 +159,80 @@ enum SpiceTolerance {
 // parentRecipeId enables the lineage/fork graph (Git for recipes).
 
 model Recipe {
-  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  authorId            String              @db.Uuid
-  title               String              // English
-  titleOriginal       String?             // original language
-  description         String?             // English
-  descriptionOriginal String?             // original language
-  originalLanguage    String?             // ISO 639-1 code: "ml", "vi", "zh", "ar"
-  status              RecipeStatus        @default(DRAFT)
-  visibility          RecipeVisibility    @default(PUBLIC)
+  id                  String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  authorId            String           @db.Uuid
+  title               String // English
+  titleOriginal       String? // original language
+  description         String? // English
+  descriptionOriginal String? // original language
+  originalLanguage    String? // ISO 639-1 code: "ml", "vi", "zh", "ar"
+  status              RecipeStatus     @default(DRAFT)
+  visibility          RecipeVisibility @default(PUBLIC)
   difficulty          Difficulty?
   prepTimeMinutes     Int?
   cookTimeMinutes     Int?
   // totalTimeMinutes is manually entered — useful when the contributor specifies
   // total time without a prep/cook split. Not enforced as prep+cook.
   totalTimeMinutes    Int?
-  baseServings        Int                 @default(4)
-  cuisineId           String?             @db.Uuid
-  regionId            String?             @db.Uuid
-  parentRecipeId      String?             @db.Uuid // lineage: forked from this recipe
-  forkNote            String?             // what the forker changed
-  coverImageUrl       String?             // R2
-  originalVideoUrl    String?             // R2 — the raw contributor recording
-  videoDurationMs     Int?                // full source-video length, for cook-mode clip scrubber
-  originalAudioUrl    String?             // R2 — if audio-only recording
-  viewCount           Int                 @default(0)
-  saveCount           Int                 @default(0)
-  cookCount           Int                 @default(0)
-  endorsementCount    Int                 @default(0)
+  baseServings        Int              @default(4)
+  cuisineId           String?          @db.Uuid
+  regionId            String?          @db.Uuid
+  parentRecipeId      String?          @db.Uuid // lineage: forked from this recipe
+  forkNote            String? // what the forker changed
+  coverImageUrl       String? // R2
+  originalVideoUrl    String? // R2 — the raw contributor recording
+  videoDurationMs     Int? // full source-video length, for cook-mode clip scrubber
+  originalAudioUrl    String? // R2 — if audio-only recording
+  // Major allergens the recipe contains, populated by the AI extractor.
+  // Kept on the recipe row (not the nutrition table) so Explore can filter
+  // "exclude nuts" cheaply; empty array means "unknown", not "allergen-free".
+  containsAllergens   Allergen[]
+  viewCount           Int              @default(0)
+  saveCount           Int              @default(0)
+  cookCount           Int              @default(0)
+  endorsementCount    Int              @default(0)
   publishedAt         DateTime?
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   // Relations
-  author              User                @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  cuisine             Cuisine?            @relation(fields: [cuisineId], references: [id])
-  region              Region?             @relation(fields: [regionId], references: [id])
-  parentRecipe        Recipe?             @relation("RecipeLineage", fields: [parentRecipeId], references: [id])
-  forks               Recipe[]            @relation("RecipeLineage") // recipes forked from this one
-  steps               RecipeStep[]
-  ingredients         RecipeIngredient[]
-  dietaryTags         RecipeDietaryTag[]
-  saves               RecipeSave[]
-  triedPosts          TriedThis[]
-  endorsements        RecipeEndorsement[]
-  cookingSessions     CookingSession[]
-  shoppingListItems   ShoppingListItem[]
-  ingestionJob        IngestionJob?
-  inCollections       CollectionRecipe[]
+  author            User                @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  nutrition         RecipeNutrition?
+  cuisine           Cuisine?            @relation(fields: [cuisineId], references: [id])
+  region            Region?             @relation(fields: [regionId], references: [id])
+  parentRecipe      Recipe?             @relation("RecipeLineage", fields: [parentRecipeId], references: [id])
+  forks             Recipe[]            @relation("RecipeLineage") // recipes forked from this one
+  steps             RecipeStep[]
+  ingredients       RecipeIngredient[]
+  dietaryTags       RecipeDietaryTag[]
+  saves             RecipeSave[]
+  triedPosts        TriedThis[]
+  endorsements      RecipeEndorsement[]
+  cookingSessions   CookingSession[]
+  shoppingListItems ShoppingListItem[]
+  ingestionJob      IngestionJob?
+  inCollections     CollectionRecipe[]
 
   // Indexes for the queries the UI actually runs
-  @@index([authorId, publishedAt(sort: Desc)])   // Home feed: recipes from followed users
-  @@index([cuisineId])                            // Explore: filter by cuisine
-  @@index([regionId])                             // Explore: filter by region
-  @@index([difficulty])                           // Explore: filter by difficulty
-  @@index([totalTimeMinutes])                     // Explore: "under 30 min" filter
-  @@index([status, publishedAt(sort: Desc)])      // General: published recipes sorted by date
+  @@index([authorId, publishedAt(sort: Desc)]) // Home feed: recipes from followed users
+  @@index([cuisineId]) // Explore: filter by cuisine
+  @@index([regionId]) // Explore: filter by region
+  @@index([difficulty]) // Explore: filter by difficulty
+  @@index([totalTimeMinutes]) // Explore: "under 30 min" filter
+  @@index([status, publishedAt(sort: Desc)]) // General: published recipes sorted by date
   @@map("recipes")
 }
 
 enum RecipeStatus {
   DRAFT
-  PROCESSING  // AI pipeline is working on it
+  PROCESSING // AI pipeline is working on it
   PUBLISHED
   ARCHIVED
 }
 
 enum RecipeVisibility {
-  PUBLIC   // discoverable in feed/explore
-  PRIVATE  // only the author can see it (link imports always live here)
+  PUBLIC // discoverable in feed/explore
+  PRIVATE // only the author can see it (link imports always live here)
 }
 
 enum Difficulty {
@@ -181,29 +250,29 @@ enum CautionLevel {
 }
 
 model RecipeStep {
-  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  recipeId            String   @db.Uuid
-  stepNumber          Int      // ordered, 1-based
-  summary             String?  // short verb-led label ("Poach the fish") for the outline + cook header
-  instruction         String   // English
-  instructionOriginal String?  // original language
-  videoSegmentUrl     String?  // R2 — AI-extracted clip for this step
+  id                  String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recipeId            String        @db.Uuid
+  stepNumber          Int // ordered, 1-based
+  summary             String? // short verb-led label ("Poach the fish") for the outline + cook header
+  instruction         String // English
+  instructionOriginal String? // original language
+  videoSegmentUrl     String? // R2 — AI-extracted clip for this step
   // stored as integer milliseconds to avoid float precision issues
   videoStartMs        Int?
   videoEndMs          Int?
-  timerSeconds        Int?     // only if the step involves waiting
-  timerLabel          String?  // short label for the timer ("poaching", "resting")
+  timerSeconds        Int? // only if the step involves waiting
+  timerLabel          String? // short label for the timer ("poaching", "resting")
   cautionLevel        CautionLevel? // present together with cautionText
   cautionText         String?
-  donenessCue         String?  // the "Look for…" sensory cue
-  tipText             String?  // optional contributor tip
-  voiceQuestion       String?  // seeded hands-free Q&A: what the cook might ask
-  voiceAnswer         String?  // seeded hands-free Q&A: Sourcery's reply
-  createdAt           DateTime @default(now())
+  donenessCue         String? // the "Look for…" sensory cue
+  tipText             String? // optional contributor tip
+  voiceQuestion       String? // seeded hands-free Q&A: what the cook might ask
+  voiceAnswer         String? // seeded hands-free Q&A: Sourcery's reply
+  createdAt           DateTime      @default(now())
 
   // Relations
-  recipe              Recipe                 @relation(fields: [recipeId], references: [id], onDelete: Cascade)
-  stepIngredients     RecipeStepIngredient[]
+  recipe          Recipe                 @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  stepIngredients RecipeStepIngredient[]
 
   @@unique([recipeId, stepNumber])
   @@index([recipeId, stepNumber])
@@ -213,19 +282,19 @@ model RecipeStep {
 model RecipeIngredient {
   id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   recipeId         String   @db.Uuid
-  name             String   // English
-  nameOriginal     String?  // original language
-  amount           Float?   // nullable for free-text quantities ("a handful", "to taste")
-  unit             String?  // "g", "ml", "cup", "tsp", etc. Null for whole items ("3 eggs")
-  quantityNote     String?  // free-text descriptor when amount is unstructured ("a handful")
-  groupLabel       String?  // "For the sauce", "For the marinade"
-  orderIndex       Int      // display order within the group
-  substitutionNote String?  // "use coconut cream if unavailable"
+  name             String // English
+  nameOriginal     String? // original language
+  amount           Float? // nullable for free-text quantities ("a handful", "to taste")
+  unit             String? // "g", "ml", "cup", "tsp", etc. Null for whole items ("3 eggs")
+  quantityNote     String? // free-text descriptor when amount is unstructured ("a handful")
+  groupLabel       String? // "For the sauce", "For the marinade"
+  orderIndex       Int // display order within the group
+  substitutionNote String? // "use coconut cream if unavailable"
   createdAt        DateTime @default(now())
 
   // Relations
-  recipe           Recipe                 @relation(fields: [recipeId], references: [id], onDelete: Cascade)
-  stepIngredients  RecipeStepIngredient[]
+  recipe          Recipe                 @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  stepIngredients RecipeStepIngredient[]
 
   @@index([recipeId, orderIndex])
   @@map("recipe_ingredients")
@@ -239,13 +308,36 @@ model RecipeStepIngredient {
   stepId       String  @db.Uuid
   ingredientId String  @db.Uuid
   noteOverride String? // shown instead of the ingredient's amount/unit when set
-  orderIndex   Int     // display order within the step
+  orderIndex   Int // display order within the step
 
   step       RecipeStep       @relation(fields: [stepId], references: [id], onDelete: Cascade)
   ingredient RecipeIngredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
 
   @@index([stepId, orderIndex])
   @@map("recipe_step_ingredients")
+}
+
+// Per-serving nutrition facts for a recipe. Split into its own 1:1 table so the
+// eight wide, mostly-optional columns + provenance don't bloat the hot recipes
+// row. Every metric is nullable so a partial estimate still persists; a recipe
+// with no row at all renders no facts grid. Values are PER SERVING (baseServings).
+model RecipeNutrition {
+  recipeId  String          @id @db.Uuid
+  calories  Int?
+  proteinG  Float?
+  carbsG    Float?
+  fatG      Float?
+  fiberG    Float?
+  sugarG    Float?
+  satFatG   Float?
+  sodiumMg  Float?
+  source    NutritionSource @default(AI_ESTIMATED)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@map("recipe_nutrition")
 }
 
 // ============================================================================
@@ -268,18 +360,18 @@ model Cuisine {
 
 model Region {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name           String   // "Kerala", "Hanoi", "Chengdu"
-  country        String   // ISO country code
+  name           String // "Kerala", "Hanoi", "Chengdu"
+  country        String // ISO country code
   latitude       Float?
   longitude      Float?
   parentRegionId String?  @db.Uuid // hierarchy: "Kerala" parent = "India"
   createdAt      DateTime @default(now())
 
   // Relations
-  parentRegion   Region?  @relation("RegionHierarchy", fields: [parentRegionId], references: [id])
-  childRegions   Region[] @relation("RegionHierarchy")
-  recipes        Recipe[]
-  users          User[]
+  parentRegion Region?  @relation("RegionHierarchy", fields: [parentRegionId], references: [id])
+  childRegions Region[] @relation("RegionHierarchy")
+  recipes      Recipe[]
+  users        User[]
 
   @@unique([name, country]) // prevents duplicate region rows per country
   @@map("regions")
@@ -292,7 +384,8 @@ model DietaryTag {
   createdAt DateTime @default(now())
 
   // Relations
-  recipes   RecipeDietaryTag[]
+  recipes RecipeDietaryTag[]
+  users   UserDietaryTag[]
 
   @@map("dietary_tags")
 }
@@ -301,19 +394,33 @@ model RecipeDietaryTag {
   recipeId     String @db.Uuid
   dietaryTagId String @db.Uuid
 
-  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
-  dietaryTag   DietaryTag @relation(fields: [dietaryTagId], references: [id], onDelete: Cascade)
+  recipe     Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  dietaryTag DietaryTag @relation(fields: [dietaryTagId], references: [id], onDelete: Cascade)
 
   @@id([recipeId, dietaryTagId])
   @@map("recipe_dietary_tags")
+}
+
+// The viewer's dietary preferences, reusing the same DietaryTag taxonomy that
+// recipes are tagged with (mirrors RecipeDietaryTag). Powers personalization and
+// future "matches your diet" filtering.
+model UserDietaryTag {
+  userId       String @db.Uuid
+  dietaryTagId String @db.Uuid
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dietaryTag DietaryTag @relation(fields: [dietaryTagId], references: [id], onDelete: Cascade)
+
+  @@id([userId, dietaryTagId])
+  @@map("user_dietary_tags")
 }
 
 model UserCuisineInterest {
   userId    String @db.Uuid
   cuisineId String @db.Uuid
 
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  cuisine   Cuisine @relation(fields: [cuisineId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cuisine Cuisine @relation(fields: [cuisineId], references: [id], onDelete: Cascade)
 
   @@id([userId, cuisineId])
   @@map("user_cuisine_interests")
@@ -328,11 +435,11 @@ model Follow {
   followingId String   @db.Uuid // the person being followed
   createdAt   DateTime @default(now())
 
-  follower    User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
-  following   User     @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+  follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
 
   @@id([followerId, followingId])
-  @@index([followerId])  // "who do I follow?" — Home feed query
+  @@index([followerId]) // "who do I follow?" — Home feed query
   @@index([followingId]) // "who follows me?" — Profile follower count
   @@map("follows")
 }
@@ -343,8 +450,8 @@ model RecipeSave {
   recipeId  String   @db.Uuid
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
 
   @@unique([userId, recipeId])
   @@index([userId]) // Tab 3: "my saved recipes"
@@ -355,36 +462,36 @@ model RecipeSave {
 // Appears in Home feed. Links back to the original recipe.
 // variations field feeds the lineage intelligence over time.
 model TriedThis {
-  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId       String        @db.Uuid
-  recipeId     String        @db.Uuid
-  photoUrl     String?       // R2
-  note         String?       // short text about how it went
-  variations   String?       // what they changed — feeds substitution intelligence
-  likeCount    Int           @default(0) // denormalized — kept in step by /social/like
-  commentCount Int           @default(0) // denormalized — kept in step by /social/comments
-  createdAt    DateTime      @default(now())
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @db.Uuid
+  recipeId     String   @db.Uuid
+  photoUrl     String? // R2
+  note         String? // short text about how it went
+  variations   String? // what they changed — feeds substitution intelligence
+  likeCount    Int      @default(0) // denormalized — kept in step by /social/like
+  commentCount Int      @default(0) // denormalized — kept in step by /social/comments
+  createdAt    DateTime @default(now())
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  recipe       Recipe        @relation(fields: [recipeId], references: [id], onDelete: Cascade)
-  likes        PostLike[]
-  comments     PostComment[]
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe   Recipe        @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  likes    PostLike[]
+  comments PostComment[]
 
-  @@index([userId, createdAt(sort: Desc)])  // user's tried-this history
-  @@index([recipeId])                       // recipe detail: community section
+  @@index([userId, createdAt(sort: Desc)]) // user's tried-this history
+  @@index([recipeId]) // recipe detail: community section
   @@map("tried_this")
 }
 
 // A like on a "tried this" post. Idempotent per (user, post); the post's
 // likeCount counter is kept in step transactionally by /social/like.
 model PostLike {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String    @db.Uuid
-  postId    String    @db.Uuid
-  createdAt DateTime  @default(now())
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @db.Uuid
+  postId    String   @db.Uuid
+  createdAt DateTime @default(now())
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post      TriedThis @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post TriedThis @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@unique([userId, postId])
   @@index([postId]) // post: like count / "who liked"
@@ -394,14 +501,14 @@ model PostLike {
 // A comment on a "tried this" post. The post's commentCount is kept in step
 // transactionally by /social/comments.
 model PostComment {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String    @db.Uuid
-  postId    String    @db.Uuid
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @db.Uuid
+  postId    String   @db.Uuid
   body      String
-  createdAt DateTime  @default(now())
+  createdAt DateTime @default(now())
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post      TriedThis @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post TriedThis @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId, createdAt]) // post: comment thread, oldest-first
   @@map("post_comments")
@@ -416,8 +523,8 @@ model RecipeEndorsement {
   recipeId  String   @db.Uuid
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
 
   @@unique([userId, recipeId])
   @@index([recipeId]) // recipe detail: endorsement count
@@ -431,30 +538,30 @@ model RecipeEndorsement {
 // they came from, so the list can be grouped by recipe in the UI.
 
 model ShoppingList {
-  id        String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String             @unique @db.Uuid // one list per user
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @unique @db.Uuid // one list per user
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items     ShoppingListItem[]
+  user  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items ShoppingListItem[]
 
   @@map("shopping_lists")
 }
 
 model ShoppingListItem {
-  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  shoppingListId String       @db.Uuid
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shoppingListId String   @db.Uuid
   ingredientName String
   amount         Float?
   unit           String?
-  quantityNote   String?      // free-text for unstructured quantities ("a handful")
-  recipeId       String?      @db.Uuid // which recipe this came from (nullable for manual adds)
-  checked        Boolean      @default(false)
-  createdAt      DateTime     @default(now())
+  quantityNote   String? // free-text for unstructured quantities ("a handful")
+  recipeId       String?  @db.Uuid // which recipe this came from (nullable for manual adds)
+  checked        Boolean  @default(false)
+  createdAt      DateTime @default(now())
 
-  shoppingList   ShoppingList @relation(fields: [shoppingListId], references: [id], onDelete: Cascade)
-  recipe         Recipe?      @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  shoppingList ShoppingList @relation(fields: [shoppingListId], references: [id], onDelete: Cascade)
+  recipe       Recipe?      @relation(fields: [recipeId], references: [id], onDelete: SetNull)
 
   @@index([shoppingListId])
   @@map("shopping_list_items")
@@ -476,11 +583,11 @@ model CookingSession {
   startedAt   DateTime  @default(now())
   completedAt DateTime? // null = still cooking. Non-null = verified cook.
 
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  recipe      Recipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
 
   @@index([userId, completedAt]) // Profile: cooking stats
-  @@index([recipeId])            // Recipe detail: cook count verification
+  @@index([recipeId]) // Recipe detail: cook count verification
   @@map("cooking_sessions")
 }
 
@@ -501,29 +608,33 @@ model IngestionJob {
   userId           String          @db.Uuid
   recipeId         String?         @unique @db.Uuid // set after processing completes
   sourceType       IngestionSource
-  sourceUrl        String?         // R2 path or external URL; null for MANUAL source type
-  sourceLanguage   String?         // detected or declared ISO code
+  sourceUrl        String? // R2 path or external URL; null for MANUAL source type
+  sourceLanguage   String? // detected or declared ISO code
+  // True when a LINK source is the importer's OWN video, proven by a YouTube
+  // OAuth grant (see YouTubeConnection). Owned imports become reviewable DRAFTs
+  // the author may publish publicly; unowned links stay private documents.
+  sourceOwned      Boolean         @default(false)
   status           IngestionStatus @default(UPLOADING)
-  transcriptionRaw String?         // raw speech-to-text output
-  structuredData   Json?           // intermediate structured form before commit
+  transcriptionRaw String? // raw speech-to-text output
+  structuredData   Json? // intermediate structured form before commit
   errorMessage     String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
-  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  recipe           Recipe?         @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe Recipe? @relation(fields: [recipeId], references: [id], onDelete: SetNull)
 
-  @@index([userId, status])                    // "my uploads and their status"
-  @@index([userId, createdAt(sort: Desc)])     // "my recent uploads"
+  @@index([userId, status]) // "my uploads and their status"
+  @@index([userId, createdAt(sort: Desc)]) // "my recent uploads"
   @@map("ingestion_jobs")
 }
 
 enum IngestionSource {
   VIDEO
   AUDIO
-  LINK        // imported from YouTube/TikTok URL
+  LINK // imported from YouTube/TikTok URL
   HANDWRITTEN // scanned recipe card
-  MANUAL      // typed by hand (no AI processing needed)
+  MANUAL // typed by hand (no AI processing needed)
 }
 
 enum IngestionStatus {
@@ -531,7 +642,7 @@ enum IngestionStatus {
   TRANSCRIBING
   STRUCTURING
   TRANSLATING
-  REVIEW      // user is reviewing the AI's output
+  REVIEW // user is reviewing the AI's output
   COMPLETE
   FAILED
 }
@@ -547,14 +658,14 @@ model Collection {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   title         String
   description   String?
-  coverImageUrl String?  // R2 or external
+  coverImageUrl String? // R2 or external
   ownerId       String?  @db.Uuid // null = curated by Sourcery
   isCurated     Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  owner         User?              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  recipes       CollectionRecipe[]
+  owner   User?              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  recipes CollectionRecipe[]
 
   @@index([ownerId])
   @@index([isCurated])
@@ -567,8 +678,8 @@ model CollectionRecipe {
   orderIndex   Int      @default(0)
   createdAt    DateTime @default(now())
 
-  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  recipe     Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
 
   @@id([collectionId, recipeId])
   @@index([collectionId, orderIndex])
@@ -584,18 +695,59 @@ model CollectionRecipe {
 
 model ImportedVideo {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  provider       String   // "youtube"
-  videoId        String   // canonical provider video id
+  provider       String // "youtube"
+  videoId        String // canonical provider video id
   sourceUrl      String
   status         String   @default("PENDING") // PENDING | READY | FAILED
-  structuredData Json?    // cached recipeExtractionSchema output
+  structuredData Json? // cached recipeExtractionSchema output
   title          String?
   channel        String?
+  channelId      String? // provider channel id, when known — who actually owns this video
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   @@unique([provider, videoId])
   @@map("imported_videos")
+}
+
+// ============================================================================
+// YOUTUBE CHANNEL IMPORT
+// ============================================================================
+//
+// A creator connects their YouTube account so they can pull their own uploads in
+// as recipes. The OAuth grant IS the ownership proof: consent is given against
+// their own Google account, and `channels.list?mine=true` returns their channel.
+// Every import re-checks server-side that the video's channelId matches.
+
+model YouTubeConnection {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String   @unique @db.Uuid // one channel per user…
+  channelId         String   @unique // …and one user per channel
+  channelTitle      String
+  channelHandle     String? // snippet.customUrl, e.g. "@priya.kochi"
+  channelThumbUrl   String?
+  uploadsPlaylistId String // contentDetails.relatedPlaylists.uploads
+  videoCount        Int      @default(0) // statistics.videoCount at connect time
+  refreshToken      String // AES-256-GCM ciphertext — never stored in plaintext
+  scope             String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("youtube_connections")
+}
+
+// Single-use, short-lived CSRF token that binds Google's callback back to the
+// Sourcery user who started the flow (the callback can't carry a bearer token).
+model YouTubeOAuthState {
+  state     String   @id
+  userId    String   @db.Uuid
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt]) // sweep expired rows
+  @@map("youtube_oauth_states")
 }
 
 // ============================================================================
