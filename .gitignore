@@ -12,3 +12,4 @@ android/
 !.env.example
 .dev.vars
 *.tsbuildinfo
+.claude/settings.local.json
